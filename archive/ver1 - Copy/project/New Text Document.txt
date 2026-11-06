@@ -1,0 +1,6 @@
+Supabase - divident_draft
+=========================
+=== Project URL 
+https://bxnzkzzbgrgmewtggodw.supabase.co
+=== API Key 
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4bnprenpiZ3JnbWV3dGdnb2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjMyNDE1MTQsImV4cCI6MjAzODgxNzUxNH0.vPBI8jE3U-4YpC52Hn48T5GsNlrEGDWXGTp6-WW-aRg

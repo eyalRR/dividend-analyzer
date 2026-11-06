@@ -1,0 +1,177 @@
+# Dividend Analyzer
+
+A professional, modular Python dividend stock analysis, portfolio scoring, and batch evaluation engine.
+
+---
+
+## Overview
+
+**Dividend Analyzer** unifies multiple historical generations of dividend scoring models into a single, clean software package. Built with the **Strategy** and **Factory** design patterns, it allows you to evaluate any stock or batch-process portfolios across all algorithm versions using an `AlgorithmVersion` Enum.
+
+### Key Capabilities
+- **Multi-Version Scoring**: Choose which algorithm version to execute on-demand (`V1_LINEAR` through `V6_MODERN_CORRECTED`).
+- **Side-by-Side Comparison**: Compare how different algorithm generations score the same stock in a single command.
+- **Transparent Local Caching**: SQLite-backed caching layer (`dividend_cache.db`) with TTL management prevents Yahoo Finance rate limiting and speeds up batch runs by $>85\%$.
+- **Batch Excel Processing**: Seamlessly updates Excel workbooks (`.xlsx`) across multiple sheets (`onezero`, `pepper`, `spy`, `nyse`), recording final scores and timestamps.
+- **Visual Charting**: Generates Matplotlib dashboards displaying price trends, dividend payment history with missing dividend detection, and colored scorecard bars.
+- **Automated Test Suite**: Complete unit test coverage powered by `pytest`.
+
+---
+
+## Directory Structure
+
+```text
+DIVIDENS/
+├── dividend_analyzer/                # Core Python Package
+│   ├── __init__.py                   # Package exports
+│   ├── cli.py                        # Terminal CLI powered by rich
+│   ├── config.py                     # Config constants, cache paths, default TTLs
+│   ├── models.py                     # Typed DataClasses (StockAnalysisResult, etc.)
+│   ├── data/
+│   │   ├── cache.py                  # Persistent SQLite caching engine
+│   │   └── fetcher.py                # Yahoo Finance fetcher with caching
+│   ├── algorithms/
+│   │   ├── versions.py               # AlgorithmVersion Enum definition
+│   │   ├── base.py                   # BaseAlgorithm abstract class
+│   │   ├── factory.py                # Factory to instantiate algorithm by Enum
+│   │   ├── v1_linear.py              # Normalized linear scoring [-1, 1]
+│   │   ├── v2_sigmoid.py             # Logistic sigmoid S-curve model
+│   │   ├── v3_exponential.py         # Asymmetric exponential & quadratic curves
+│   │   ├── v4_penalty.py             # Weighted multi-factor safety penalties
+│   │   ├── v5_dividend_value.py      # Compounded Dividend Value model (Baseline)
+│   │   └── v6_modern.py              # Modern financial standard (Corrected math)
+│   ├── excel/
+│   │   └── processor.py              # Multi-sheet Excel reader & writer
+│   └── visualization/
+│       └── charts.py                 # Matplotlib dashboard generator
+├── tests/                            # Pytest automated test suite
+│   ├── conftest.py                   # Shared synthetic test fixtures
+│   ├── test_algorithms.py            # Algorithm verification tests
+│   ├── test_cache.py                 # SQLite cache hit/miss tests
+│   └── test_excel.py                 # Excel read/write verification
+├── data/                             # Working datasets (divList.xlsx, SP500, etc.)
+├── charts/                           # Generated chart images
+├── archive/                          # Archived legacy prototypes (Flask, React, etc.)
+├── pyproject.toml                    # Modern PEP 518/621 packaging metadata
+├── requirements.txt                  # Lean project dependencies
+└── README.md                         # Documentation
+```
+
+---
+
+## Algorithm Versions Catalog
+
+| Version Enum | Name | Description | Key Features |
+|---|---|---|---|
+| `v1_linear` | **V1: Normalized Linear** | Initial 7-metric model | Maps metrics linearly to $[-1, 1]$ against fixed thresholds. Equal weighting. |
+| `v2_sigmoid` | **V2: Sigmoid S-Curve** | Logistic sigmoid model | $S(x) = 1 / (1 + e^{-x})$. Tighter payout ($<50\%$) and dividend growth ($>10\%$) thresholds. |
+| `v3_exponential` | **V3: Asymmetric Exponential** | Benchmark-driven curves | Dynamic S&P 500 (`SPY`) dividend yield benchmark. Asymmetric quadratic curve for payout & debt-to-equity; exponential for growth. 7 weighted metrics. |
+| `v4_penalty_weighted` | **V4: Safety Penalties** | Risk-deduction model | Adds penalties for dangerous payout ($\ge 80\%$), low earnings growth ($\le 3\%$), excessive leverage ($\ge 2.0$), and low age ($\le 5$ yrs). Bonus for yield $> 2\times$ SPY. |
+| `v5_dividend_value` | **V5: Dividend Value (Baseline)** | Compounded yield + growth | Combines yield and growth into 5-year compounded **Dividend Value** ($40\%$ weight). Multi-sheet Excel support (`divClaude5.py`/`excel.py`). |
+| `v6_modern_corrected` | **V6: Modern Financial Standard** | Production corrected standard | **TTM yield** (trailing 365 days), **true earnings growth** from financial statements, **true diluted EPS**, **full dividend age** (no 10-year cap), and **unprofitable company protection**. |
+
+---
+
+## Installation & Setup
+
+1. **Clone or Navigate to the Repository**:
+   ```powershell
+   cd c:\Users\EYAL\Desktop\DIVIDENS
+   ```
+
+2. **Install Dependencies**:
+   ```powershell
+   python -m pip install -r requirements.txt
+   ```
+
+3. **Install Package in Editable Mode (Optional)**:
+   ```powershell
+   python -m pip install -e .
+   ```
+
+---
+
+## CLI Usage
+
+### 1. Analyze a Single Stock
+Evaluate any ticker symbol using the baseline algorithm (`v5_dividend_value`):
+```powershell
+python -m dividend_analyzer.cli analyze JNJ
+```
+
+Specify a different algorithm version:
+```powershell
+python -m dividend_analyzer.cli analyze JNJ --version v6_modern_corrected
+```
+
+Generate and save a visual chart:
+```powershell
+python -m dividend_analyzer.cli analyze JNJ --save-chart charts/JNJ_dashboard.png
+```
+
+### 2. Multi-Version Comparison Mode
+Compare how all 6 algorithm generations score a stock side-by-side:
+```powershell
+python -m dividend_analyzer.cli compare JNJ
+```
+
+### 3. Batch Excel Processing
+Process an entire Excel spreadsheet, update scores and timestamps in-place:
+```powershell
+python -m dividend_analyzer.cli batch data/divList.xlsx --version v5_dividend_value
+```
+
+Specify a particular sheet:
+```powershell
+python -m dividend_analyzer.cli batch data/divList.xlsx --sheet Sheet1 --version v6_modern_corrected
+```
+
+### 4. Inspect Available Algorithm Versions
+```powershell
+python -m dividend_analyzer.cli versions
+```
+
+### 5. Manage Local Cache
+View cache location or clear stale cache entries:
+```powershell
+python -m dividend_analyzer.cli cache
+python -m dividend_analyzer.cli cache --clear
+```
+
+---
+
+## Python API Usage
+
+You can easily integrate the dividend analyzer into your own Python scripts:
+
+```python
+from dividend_analyzer import get_algorithm, AlgorithmVersion, DataFetcher
+
+# 1. Initialize data fetcher (uses SQLite cache automatically)
+fetcher = DataFetcher()
+
+# 2. Fetch stock data and S&P 500 benchmark yield
+history, info = fetcher.fetch_stock_data("JNJ")
+benchmark_yield = fetcher.get_benchmark_dividend_yield("SPY")
+
+# 3. Instantiate your desired algorithm version via Enum
+algo_v5 = get_algorithm(AlgorithmVersion.V5_DIVIDEND_VALUE)
+algo_v6 = get_algorithm(AlgorithmVersion.V6_MODERN_CORRECTED)
+
+# 4. Run analysis
+result_v5 = algo_v5.analyze("JNJ", history, info, benchmark_yield)
+result_v6 = algo_v6.analyze("JNJ", history, info, benchmark_yield)
+
+print(f"V5 Score: {result_v5.final_score:.2f}")
+print(f"V6 Score: {result_v6.final_score:.2f}")
+print("V6 Conditions:", result_v6.conditions)
+```
+
+---
+
+## Running Automated Tests
+
+Run the full pytest suite to verify all algorithm calculations, data caching, and Excel processing:
+```powershell
+python -m pytest tests/ -v
+```

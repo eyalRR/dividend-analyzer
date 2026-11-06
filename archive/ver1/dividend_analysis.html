@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Analysis Tool</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .chart-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Stock Analysis Tool</h1>
+    
+    <div class="section">
+        <h2>Analyze Single Stock</h2>
+        <input type="text" id="stockSymbol" placeholder="Enter stock symbol">
+        <button onclick="analyzeStock()">Analyze Stock</button>
+    </div>
+    
+    <div class="section">
+        <h2>Update Excel File</h2>
+        <input type="file" id="excelFile" accept=".xlsx">
+        <div id="sheetSelection" style="display:none; margin-top: 10px;">
+            Select Sheet:
+            <select id="sheetName"></select>
+        </div>
+        <button onclick="processExcel()">Process Excel</button>
+    </div>
+    
+    <div id="result"></div>
+
+    <script>
+        async function analyzeStock() {
+            const symbol = document.getElementById('stockSymbol').value.toUpperCase();
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Analyzing...';
+
+            try {
+                const response = await fetch('http://localhost:5000/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ symbol: symbol }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayResult(data);
+            } catch (error) {
+                resultDiv.innerHTML = `Error: ${error.message}`;
+            }
+        }
+
+        function displayResult(data) {
+            const resultDiv = document.getElementById('result');
+            let html = `<h3>Analysis for ${data.symbol}</h3>`;
+            html += `<p>Final Score: ${data.final_score.toFixed(2)}</p>`;
+            
+            html += '<h4>Conditions:</h4>';
+            html += '<table>';
+            html += '<tr><th>Condition</th><th>Value</th><th>Threshold</th><th>Raw Score</th><th>Weight</th></tr>';
+            for (const [condition, value] of Object.entries(data.conditions)) {
+                const threshold = data.thresholds[condition][0];
+                const rawScore = data.raw_scores[condition];
+                const weight = data.weights[condition];
+                html += `<tr><td>${condition}</td><td>${value.toFixed(2)}</td><td>${threshold.toFixed(2)}</td><td>${rawScore.toFixed(2)}</td><td>${weight.toFixed(2)}</td></tr>`;
+            }
+            html += '</table>';
+
+            html += `<p>Penalties: ${data.penalties.toFixed(2)}</p>`;
+
+            html += '<h4>Missing Dividends:</h4>';
+            html += data.missing_dividends.length > 0 ? data.missing_dividends.join(', ') : 'None';
+
+            html += '<h4>Annual Dividends:</h4>';
+            html += '<table>';
+            html += '<tr><th>Year</th><th>Dividend</th></tr>';
+            for (const [year, dividend] of Object.entries(data.annual_dividends)) {
+                html += `<tr><td>${year}</td><td>${dividend.toFixed(2)}</td></tr>`;
+            }
+            html += '</table>';
+
+            html += '<div class="chart-container"><canvas id="dividendChart"></canvas></div>';
+
+            resultDiv.innerHTML = html;
+
+            createDividendChart(data.annual_dividends);
+        }
+
+        function createDividendChart(annualDividends) {
+            const ctx = document.getElementById('dividendChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Object.keys(annualDividends),
+                    datasets: [{
+                        label: 'Annual Dividends',
+                        data: Object.values(annualDividends),
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function processExcel() {
+            // Implement Excel processing logic here
+            alert('Excel processing not implemented in this demo.');
+        }
+
+        document.getElementById('excelFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                // Here you would typically read the Excel file and populate the sheet selection
+                // For this demo, we'll just show a dummy sheet selection
+                const sheetSelection = document.getElementById('sheetSelection');
+                const sheetName = document.getElementById('sheetName');
+                sheetSelection.style.display = 'block';
+                sheetName.innerHTML = '<option value="Sheet1">Sheet1</option><option value="Sheet2">Sheet2</option>';
+            }
+        });
+    </script>
+</body>
+</html>

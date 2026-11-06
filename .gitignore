@@ -1,0 +1,42 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments & dependencies
+venv/
+env/
+ENV/
+.venv/
+node_modules/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Data caches & temporary database
+dividend_cache.db
+*.sqlite3
+*.db-journal
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+
+# Generated reports & charts
+output/
+charts/

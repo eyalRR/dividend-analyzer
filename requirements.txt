@@ -1,0 +1,11 @@
+# Core dependencies for Dividend Analyzer
+yfinance>=0.2.41
+pandas>=2.2.0
+numpy>=1.24.0
+openpyxl>=3.1.5
+matplotlib>=3.8.0
+rich>=13.0.0
+requests>=2.31.0
+
+# Development & Testing
+pytest>=8.0.0
