@@ -59,6 +59,61 @@ DIVIDENS/
 
 ---
 
+## Input → Processing → Output Flow
+
+The core engine (not the one-off `scripts/`, covered below) follows one pipeline regardless of entry point (`analyze`, `compare`, or `batch`):
+
+1. **Input**
+   - A single ticker symbol (CLI arg) or a batch of symbols read from an Excel workbook (`data/divList.xlsx`, etc. — any sheet with a `symbol`/`ticker` column).
+   - `--version` selects which of the 6 algorithm strategies to score with (default `v5_dividend_value`).
+
+2. **Fetch** (`dividend_analyzer/data/fetcher.py`)
+   - `DataFetcher.fetch_stock_data()` pulls price/dividend history and fundamentals from `yfinance`, transparently reading/writing through the SQLite-backed `DataCache` (`dividend_cache.db`) to avoid redundant Yahoo Finance calls.
+   - `get_benchmark_dividend_yield()` fetches SPY's trailing yield once per run as the scoring benchmark.
+
+3. **Score** (`dividend_analyzer/algorithms/*`)
+   - The selected `BaseAlgorithm` subclass (`v1_linear` … `v6_modern`) consumes `(history, info, benchmark_yield)` and produces a `StockAnalysisResult` — final/initial score, penalties, per-metric conditions, raw scores, weights, and any detected missing dividends.
+
+4. **Output**
+   - **CLI** (`cli.py`): `rich` panels/tables for `analyze` (single-stock breakdown) and `compare` (all 6 versions side-by-side).
+   - **Excel writeback** (`excel/processor.py`): `batch` writes `score`/`date` columns back into the source workbook in place.
+   - **Charts** (`visualization/charts.py`): `plot_stock_dashboard()` renders a 3-panel Matplotlib dashboard (price, dividend history with missing-dividend markers, metric score bars), optionally saved to PNG.
+
+```
+symbol(s) ──► DataFetcher (yfinance + SQLite cache) ──► Algorithm (Strategy) ──► StockAnalysisResult
+                                                                                        │
+                                                              ┌─────────────────────────┼─────────────────────────┐
+                                                              ▼                         ▼                         ▼
+                                                        CLI tables (rich)      Excel writeback (score/date)   PNG dashboard
+```
+
+---
+
+## Utility Scripts (`scripts/`)
+
+These are standalone maintenance/reporting scripts, separate from the core package above. They are **not** interdependent in code, but refreshing the project's data end-to-end follows this order:
+
+1. **`update_sp500.py`** — Run first. Pulls the current S&P 500 constituent list from Wikipedia and rebuilds:
+   - `data/SP500_Companies.xlsx` — full reference list of all current constituents.
+   - `data/divList.xlsx` — filtered down to constituents that paid a dividend in the trailing 5 years (overwrites the file).
+   ```powershell
+   python scripts/update_sp500.py
+   ```
+
+2. **`add_new_dividend_payers.py`** — Run second, after `update_sp500.py` (or whenever you want to extend the watchlist with tickers from outside the S&P 500). Combines external ticker lists (currently `market_dashboard`'s `ALL_STOCKS` and a `good_fundamental` screener CSV), skips anything already in `data/divList.xlsx`, filters the rest for a dividend paid in the trailing 5 years, and **appends** the qualifying tickers to `data/divList.xlsx`.
+   ```powershell
+   python scripts/add_new_dividend_payers.py
+   ```
+
+3. **`export_scores.py`** — Run last, once the watchlist is finalized. Takes any comma-separated ticker list and scores every symbol across all 6 algorithm versions, writing one row per symbol to a single CSV.
+   ```powershell
+   python scripts/export_scores.py MSFT,AAPL,GOOG,ARM --out scores.csv
+   ```
+
+All three scripts use `dividend_analyzer.data.fetcher.DataFetcher` for any Yahoo Finance access rather than calling `yfinance` directly, keeping fetch logic (timezone handling, etc.) consistent with the core package.
+
+---
+
 ## Algorithm Versions Catalog
 
 | Version Enum | Name | Description | Key Features |
