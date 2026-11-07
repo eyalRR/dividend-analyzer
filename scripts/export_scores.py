@@ -28,7 +28,7 @@ def main():
 
     rows = []
     for sym in symbols:
-        row = {"symbol": sym, "company_name": "", "price": "", "status": "ok"}
+        row = {"symbol": sym, "company_name": "", "price": "", "status": "ok", "quality": "", "risk": ""}
         for v in versions:
             row[v.value] = ""
 
@@ -46,13 +46,19 @@ def main():
                 row[v.value] = round(res.final_score, 4)
                 row["company_name"] = res.company_name
                 row["price"] = res.current_price
+                # v7_fundamental_check's final_score is a blend; also surface its two
+                # underlying 0-100 scores on their own, same as the good_fundamental
+                # screener's quality/risk columns (same skill, so the same meaning).
+                if v == AlgorithmVersion.V7_FUNDAMENTAL_CHECK:
+                    row["quality"] = res.conditions.get("Quality Score", "")
+                    row["risk"] = res.conditions.get("Risk Score", "")
             except Exception as e:
                 row[v.value] = ""
                 print(f"[WARN] {sym}/{v.value}: {e}")
 
         rows.append(row)
 
-    fieldnames = ["symbol", "company_name", "price", "status"] + [v.value for v in versions]
+    fieldnames = ["symbol", "company_name", "price", "status"] + [v.value for v in versions] + ["quality", "risk"]
     out_path = Path(args.out)
     with out_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
