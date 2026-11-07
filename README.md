@@ -124,6 +124,7 @@ All three scripts use `dividend_analyzer.data.fetcher.DataFetcher` for any Yahoo
 | `v4_penalty_weighted` | **V4: Safety Penalties** | Risk-deduction model | Adds penalties for dangerous payout ($\ge 80\%$), low earnings growth ($\le 3\%$), excessive leverage ($\ge 2.0$), and low age ($\le 5$ yrs). Bonus for yield $> 2\times$ SPY. |
 | `v5_dividend_value` | **V5: Dividend Value (Baseline)** | Compounded yield + growth | Combines yield and growth into 5-year compounded **Dividend Value** ($40\%$ weight). Multi-sheet Excel support (`divClaude5.py`/`excel.py`). |
 | `v6_modern_corrected` | **V6: Modern Financial Standard** | Production corrected standard | **TTM yield** (trailing 365 days), **true earnings growth** from financial statements, **true diluted EPS**, **full dividend age** (no 10-year cap), and **unprofitable company protection**. |
+| `v7_fundamental_check` | **V7: Fundamental Check** | Wraps the vendored `fundamental-check` skill | Not dividend-specific — scores Quality (0-100) and Risk (0-100) from profitability, cash generation, leverage, liquidity, dilution and earnings quality, with a hard AVOID gate. Ignores the pipeline's cached `history`/`info` and does its own ~10 fresh `yfinance` calls per symbol via subprocess — much slower than V1-V6, so a `compare` or batch run that includes it takes noticeably longer. |
 
 ---
 

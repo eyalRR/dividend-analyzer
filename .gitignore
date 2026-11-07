@@ -40,4 +40,5 @@ Thumbs.db
 # Generated reports & charts
 output/
 charts/
-vendor/fundamental-check/reports/
+.claude/skills/fundamental-check/reports/
+.claude/skills/fundamental-check/__pycache__/

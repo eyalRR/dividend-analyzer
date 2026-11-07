@@ -1,10 +1,10 @@
-"""Run the vendored fundamental-check skill on symbols missing quality/risk
-scores in scores.csv, and merge the results back in.
+"""Run the fundamental-check skill (dividend_analyzer's V7_FUNDAMENTAL_CHECK
+algorithm) on symbols missing quality/risk scores in scores.csv, and merge
+the results back in.
 
-fundamental_check.py is a self-contained, deterministic Quality/Risk gauntlet
-vendored (unmodified) from youtue_strategy_back_tester's fundamental-check
-skill (vendor/fundamental-check/). It is run once per symbol, as its own
-subprocess -- same pattern that project's own scan.py orchestrator uses.
+Reuses dividend_analyzer.algorithms.v7_fundamental_check.run_fundamental_check,
+the same subprocess wrapper the pipeline's v7_fundamental_check algorithm
+uses, so this script and `--version v7_fundamental_check` never drift apart.
 
 Usage:
     python scripts/run_fundamental_check.py
@@ -13,45 +13,23 @@ Usage:
 import argparse
 import concurrent.futures
 import csv
-import json
-import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-FUNDAMENTAL_CHECK = REPO_ROOT / "vendor" / "fundamental-check" / "fundamental_check.py"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from dividend_analyzer.algorithms.v7_fundamental_check import run_fundamental_check
 
 
 def check_one(ticker: str) -> dict:
     """Run fundamental_check.py on one ticker; return a result dict, never raises."""
-    row = {"symbol": ticker, "quality": None, "risk": None, "error": None}
-    try:
-        proc = subprocess.run(
-            [sys.executable, str(FUNDAMENTAL_CHECK), ticker],
-            capture_output=True, text=True, timeout=300,
-        )
-    except subprocess.TimeoutExpired:
-        row["error"] = "timed out"
-        return row
-
-    if proc.returncode == 2:
-        first_line = (proc.stderr.strip().splitlines() or ["unresolvable / insufficient data"])[0]
-        row["error"] = first_line
-        return row
-
-    json_line = next((ln for ln in proc.stdout.splitlines() if ln.startswith("JSON: ")), None)
-    if not json_line:
-        row["error"] = "no JSON path reported"
-        return row
-
-    jpath = Path(json_line[len("JSON: "):].strip())
-    try:
-        data = json.loads(jpath.read_text(encoding="utf-8"))
-        row["quality"] = data["quality"]
-        row["risk"] = data["risk"]
-    except Exception as e:
-        row["error"] = f"could not read report JSON ({type(e).__name__})"
-    return row
+    check = run_fundamental_check(ticker)
+    return {
+        "symbol": ticker,
+        "quality": check["quality"],
+        "risk": check["risk"],
+        "error": check["error"],
+    }
 
 
 def main():

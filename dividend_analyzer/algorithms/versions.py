@@ -11,6 +11,7 @@ class AlgorithmVersion(str, Enum):
     V4_PENALTY_WEIGHTED = "v4_penalty_weighted"
     V5_DIVIDEND_VALUE = "v5_dividend_value"
     V6_MODERN_CORRECTED = "v6_modern_corrected"
+    V7_FUNDAMENTAL_CHECK = "v7_fundamental_check"
 
     @property
     def display_name(self) -> str:
@@ -21,6 +22,7 @@ class AlgorithmVersion(str, Enum):
             AlgorithmVersion.V4_PENALTY_WEIGHTED: "V4: Weighted Safety Penalty System",
             AlgorithmVersion.V5_DIVIDEND_VALUE: "V5: Compounded Dividend Value (Baseline)",
             AlgorithmVersion.V6_MODERN_CORRECTED: "V6: Modern Financial Standard (Corrected)",
+            AlgorithmVersion.V7_FUNDAMENTAL_CHECK: "V7: Fundamental Check (Quality/Risk)",
         }
         return names.get(self, self.value)
 
@@ -33,5 +35,6 @@ class AlgorithmVersion(str, Enum):
             AlgorithmVersion.V4_PENALTY_WEIGHTED: "Adds multi-tier safety deduction penalties for excessive payout, low earnings growth, or high leverage.",
             AlgorithmVersion.V5_DIVIDEND_VALUE: "Combines yield and growth into 5-year compounded Dividend Value (40% weight) with full penalties.",
             AlgorithmVersion.V6_MODERN_CORRECTED: "Production standard: TTM dividend yield, true net income CAGR, true historical diluted EPS, full dividend longevity, and edge-case protection.",
+            AlgorithmVersion.V7_FUNDAMENTAL_CHECK: "Wraps the fundamental-check skill's deep balance-sheet/cash-flow/earnings-quality gauntlet (Quality 0-100, Risk 0-100, hard AVOID gate). Not dividend-specific; slow (its own ~10 fresh yfinance calls per symbol via subprocess, ignores the pipeline's cached history/info).",
         }
         return descs.get(self, "")
