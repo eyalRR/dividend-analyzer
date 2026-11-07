@@ -2,19 +2,24 @@
 Quality/Risk gauntlet (profitability, cash generation, leverage, liquidity,
 dilution, earnings quality, hard AVOID gate) as a pipeline algorithm.
 
-Unlike V1-V6, this version does not score off the history/info the pipeline
-already fetched -- fundamental_check.py is a self-contained, deterministic
-tool that always fetches its own fresh data (about 10 yfinance calls per
-symbol) via its own subprocess, by design (a pre-trade sanity check wants
-current data, not whatever happens to be in the SQLite cache). It is
-therefore much slower per symbol than the other six versions.
+Unlike V1-V6, most of this version's data still isn't the pipeline's cached
+history/info -- fundamental_check.py is a self-contained tool that pulls its
+own financial statements, cashflow, quarterly data, calendar and news fresh
+every run (by design: a pre-trade sanity check wants current data). This
+module hands it the pipeline's own DataFetcher-cached `history`/`info` via
+FUNDCHECK_PREFETCH_INFO/FUNDCHECK_PREFETCH_HISTORY (see
+run_fundamental_check() below), so it skips re-fetching those 2 of its ~10
+yfinance calls per symbol -- but the other ~8 (statements, cashflow,
+calendar, news) still run fresh, so this version remains much slower per
+symbol than the other six.
 """
 import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, Optional
 
 import pandas as pd
 from dividend_analyzer.algorithms.base import BaseAlgorithm
@@ -30,46 +35,83 @@ RISK_WEIGHT = 0.35
 AVOID_PENALTY = 0.30
 
 
-def run_fundamental_check(symbol: str, timeout: int = 300) -> Dict[str, Any]:
+def run_fundamental_check(
+    symbol: str,
+    history: Optional[pd.DataFrame] = None,
+    info: Optional[Dict[str, Any]] = None,
+    timeout: int = 300,
+) -> Dict[str, Any]:
     """Run the vendored fundamental_check.py on one symbol; never raises.
+
+    If `history`/`info` are given (the pipeline's own DataFetcher-cached
+    data for this symbol), they are handed to fundamental_check.py via its
+    FUNDCHECK_PREFETCH_INFO/FUNDCHECK_PREFETCH_HISTORY env vars, so it skips
+    its own `tk.info`/`tk.history()` calls -- 2 of its ~10 yfinance requests
+    per symbol. Everything else (statements, cashflow, calendar, news) is
+    still fetched fresh by fundamental_check.py itself; this script's cache
+    doesn't cover those.
 
     Returns a dict with quality/risk/avoid/coverage, or quality=None on
     failure (unresolvable ticker, insufficient data, or a subprocess error).
     """
     result = {"quality": None, "risk": None, "avoid": None, "coverage": None, "error": None}
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+
+    tmp_info_path = None
+    tmp_hist_path = None
     try:
-        proc = subprocess.run(
-            [sys.executable, str(FUNDAMENTAL_CHECK), symbol],
-            capture_output=True, timeout=timeout, env=env,
-            encoding="utf-8", errors="replace",
-        )
-    except subprocess.TimeoutExpired:
-        result["error"] = "timed out"
-        return result
+        if info:
+            fd, tmp_info_path = tempfile.mkstemp(suffix=".json")
+            os.close(fd)
+            with open(tmp_info_path, "w", encoding="utf-8") as f:
+                json.dump(info, f, default=str)
+            env["FUNDCHECK_PREFETCH_INFO"] = tmp_info_path
 
-    if proc.returncode == 2:
-        first_line = (proc.stderr or "").strip().splitlines()
-        result["error"] = first_line[0] if first_line else "unresolvable / insufficient data"
-        return result
+        if history is not None and not history.empty:
+            fd, tmp_hist_path = tempfile.mkstemp(suffix=".pkl")
+            os.close(fd)
+            history.to_pickle(tmp_hist_path)
+            env["FUNDCHECK_PREFETCH_HISTORY"] = tmp_hist_path
 
-    json_line = next((ln for ln in (proc.stdout or "").splitlines() if ln.startswith("JSON: ")), None)
-    if not json_line:
-        result["error"] = "no JSON path reported"
-        return result
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(FUNDAMENTAL_CHECK), symbol],
+                capture_output=True, timeout=timeout, env=env,
+                encoding="utf-8", errors="replace",
+            )
+        except subprocess.TimeoutExpired:
+            result["error"] = "timed out"
+            return result
 
-    jpath = Path(json_line[len("JSON: "):].strip())
-    try:
-        data = json.loads(jpath.read_text(encoding="utf-8"))
-        result.update(
-            quality=float(data["quality"]),
-            risk=float(data["risk"]),
-            avoid=bool(data["avoid"]),
-            coverage=float(data.get("coverage", 0.0)),
-        )
-    except Exception as e:
-        result["error"] = f"could not read report JSON ({type(e).__name__})"
-    return result
+        if proc.returncode == 2:
+            first_line = (proc.stderr or "").strip().splitlines()
+            result["error"] = first_line[0] if first_line else "unresolvable / insufficient data"
+            return result
+
+        json_line = next((ln for ln in (proc.stdout or "").splitlines() if ln.startswith("JSON: ")), None)
+        if not json_line:
+            result["error"] = "no JSON path reported"
+            return result
+
+        jpath = Path(json_line[len("JSON: "):].strip())
+        try:
+            data = json.loads(jpath.read_text(encoding="utf-8"))
+            result.update(
+                quality=float(data["quality"]),
+                risk=float(data["risk"]),
+                avoid=bool(data["avoid"]),
+                coverage=float(data.get("coverage", 0.0)),
+            )
+        except Exception as e:
+            result["error"] = f"could not read report JSON ({type(e).__name__})"
+        return result
+    finally:
+        for p in (tmp_info_path, tmp_hist_path):
+            if p:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
 
 
 class V7FundamentalCheckAlgorithm(BaseAlgorithm):
@@ -84,7 +126,7 @@ class V7FundamentalCheckAlgorithm(BaseAlgorithm):
         info: Dict[str, Any],
         benchmark_yield: float = 1.5,
     ) -> Dict[str, float]:
-        check = run_fundamental_check(symbol)
+        check = run_fundamental_check(symbol, history=history, info=info)
         if check["quality"] is None:
             # Unresolvable / insufficient data / subprocess failure: degrade to
             # the worst possible signature rather than raising, consistent with

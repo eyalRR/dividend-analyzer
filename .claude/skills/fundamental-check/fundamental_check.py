@@ -13,6 +13,7 @@ Requires: yfinance and pandas.
 
 import json
 import math
+import os
 import random
 import sys
 import time
@@ -52,6 +53,42 @@ DIAG = {"aliases": {}, "retries": [], "notes": [], "fx": {}, "fetch_calls": 0}
 
 def note(msg):
     DIAG["notes"].append(msg)
+
+
+# --------------------------------------------------------------------------
+# Optional pre-fetched info/history injection -- off by default (no env vars
+# set, nothing changes). Set by a caller that already has fresh `info`/
+# `history` for this exact symbol (e.g. dividend_analyzer's pipeline, which
+# fetches both through its own SQLite-cached DataFetcher) to skip this
+# script's own `tk.info` / `tk.history()` calls -- 2 of its ~10 yfinance
+# requests per symbol. Every other fetch (statements, cashflow, calendar)
+# is unaffected; this script still gets to decide freshness for those.
+# --------------------------------------------------------------------------
+def load_prefetched_info():
+    path = os.environ.get("FUNDCHECK_PREFETCH_INFO")
+    if not path:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        note("info: served from caller's pre-fetched data (FUNDCHECK_PREFETCH_INFO)")
+        return data
+    except Exception as e:
+        note(f"FUNDCHECK_PREFETCH_INFO unreadable ({type(e).__name__}); fetching info normally")
+        return None
+
+
+def load_prefetched_history():
+    path = os.environ.get("FUNDCHECK_PREFETCH_HISTORY")
+    if not path:
+        return None
+    try:
+        hist = pd.read_pickle(path)
+        note("history: served from caller's pre-fetched data (FUNDCHECK_PREFETCH_HISTORY)")
+        return hist
+    except Exception as e:
+        note(f"FUNDCHECK_PREFETCH_HISTORY unreadable ({type(e).__name__}); fetching history normally")
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -1564,13 +1601,15 @@ def main(argv):
         return 2
 
     tk = yf.Ticker(symbol)
-    info = fetch("info", lambda: tk.info, {}) or {}
+    info = load_prefetched_info() or fetch("info", lambda: tk.info, {}) or {}
     fin = fetch("income_stmt", lambda: tk.income_stmt)
     qfin = fetch("quarterly_income_stmt", lambda: tk.quarterly_income_stmt)
     bs = fetch("balance_sheet", lambda: tk.balance_sheet)
     cf = fetch("cashflow", lambda: tk.cashflow)
     qcf = fetch("quarterly_cashflow", lambda: tk.quarterly_cashflow)
-    hist = fetch("history", lambda: tk.history(period="3mo"))
+    hist = load_prefetched_history()
+    if hist is None:
+        hist = fetch("history", lambda: tk.history(period="3mo"))
     calendar = fetch("calendar", lambda: tk.calendar, {}) or {}
     fetched_at = dt.datetime.now(TLV_TZ)
 
