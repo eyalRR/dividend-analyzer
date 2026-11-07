@@ -55,7 +55,15 @@ def run_fundamental_check(
     failure (unresolvable ticker, insufficient data, or a subprocess error).
     """
     result = {"quality": None, "risk": None, "avoid": None, "coverage": None, "error": None}
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    env = {
+        **os.environ,
+        "PYTHONIOENCODING": "utf-8",
+        # calendar (next earnings date) and news are display-only in the
+        # report -- never scored into Quality/Risk -- and this algorithm
+        # doesn't surface either, so skip both fetches entirely.
+        "FUNDCHECK_SKIP_CALENDAR": "1",
+        "FUNDCHECK_SKIP_NEWS": "1",
+    }
 
     tmp_info_path = None
     tmp_hist_path = None

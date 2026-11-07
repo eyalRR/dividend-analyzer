@@ -211,9 +211,17 @@ def yahoo_search(query):
         return []
 
 
+# resolve()'s existence probe below fetches income_stmt to confirm a symbol has
+# data; main() then fetched it AGAIN on a separate Ticker instance -- the same
+# large statement, twice, every run. Cached here so main() can reuse it instead.
+_PROBE_CACHE = {}
+
+
 def has_data(symbol):
     t = yf.Ticker(symbol)
     fin = fetch(f"probe {symbol}", lambda: t.income_stmt)
+    if fin is not None and not fin.empty:
+        _PROBE_CACHE[symbol] = fin
     return fin is not None and not fin.empty
 
 
@@ -1602,7 +1610,11 @@ def main(argv):
 
     tk = yf.Ticker(symbol)
     info = load_prefetched_info() or fetch("info", lambda: tk.info, {}) or {}
-    fin = fetch("income_stmt", lambda: tk.income_stmt)
+    fin = _PROBE_CACHE.pop(symbol, None)
+    if fin is not None:
+        note("income_stmt: reused from ticker-resolution probe (skipped duplicate fetch)")
+    else:
+        fin = fetch("income_stmt", lambda: tk.income_stmt)
     qfin = fetch("quarterly_income_stmt", lambda: tk.quarterly_income_stmt)
     bs = fetch("balance_sheet", lambda: tk.balance_sheet)
     cf = fetch("cashflow", lambda: tk.cashflow)
@@ -1610,7 +1622,13 @@ def main(argv):
     hist = load_prefetched_history()
     if hist is None:
         hist = fetch("history", lambda: tk.history(period="3mo"))
-    calendar = fetch("calendar", lambda: tk.calendar, {}) or {}
+    # calendar (next earnings date) and news are purely informational --
+    # displayed in the report but never scored into Quality/Risk (see README) --
+    # so a caller that doesn't render those sections can skip fetching them.
+    if os.environ.get("FUNDCHECK_SKIP_CALENDAR"):
+        calendar = {}
+    else:
+        calendar = fetch("calendar", lambda: tk.calendar, {}) or {}
     fetched_at = dt.datetime.now(TLV_TZ)
 
     if fin is None or getattr(fin, "empty", True):
@@ -1626,11 +1644,14 @@ def main(argv):
     # answer. Never allowed to fail the check: any network/parsing problem is news.py's own
     # concern (see fetch_headlines), not this script's.
     news_price = m.price_usd if m.quote_ccy == "USD" else None
-    try:
-        news_info = news.annotate(symbol, news_price)
-    except Exception as e:
-        note(f"news unavailable ({type(e).__name__})")
+    if os.environ.get("FUNDCHECK_SKIP_NEWS"):
         news_info = {"headlines": [], "classified": None}
+    else:
+        try:
+            news_info = news.annotate(symbol, news_price)
+        except Exception as e:
+            note(f"news unavailable ({type(e).__name__})")
+            news_info = {"headlines": [], "classified": None}
 
     earnings = next_earnings(calendar)
 
