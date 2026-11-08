@@ -93,24 +93,28 @@ symbol(s) ──► DataFetcher (yfinance + SQLite cache) ──► Algorithm (S
 
 These are standalone maintenance/reporting scripts, separate from the core package above. They are **not** interdependent in code, but refreshing the project's data end-to-end follows this order:
 
-1. **`update_sp500.py`** — Run first. Pulls the current S&P 500 constituent list from Wikipedia and rebuilds:
-   - `data/SP500_Companies.xlsx` — full reference list of all current constituents.
-   - `data/divList.xlsx` — filtered down to constituents that paid a dividend in the trailing 5 years (overwrites the file).
+1. **`update_sp500_nasdaq.py`** — Run first. Pulls the current S&P 500 constituent list from Wikipedia and the current Nasdaq-100 list from Nasdaq's own API, and rebuilds `data/SP500_Companies.xlsx` — the full reference list of every current member of either index. This script only refreshes that reference list; it does not touch `data/divList.xlsx`.
    ```powershell
-   python scripts/update_sp500.py
+   python scripts/update_sp500_nasdaq.py
    ```
 
-2. **`add_new_dividend_payers.py`** — Run second, after `update_sp500.py` (or whenever you want to extend the watchlist with tickers from outside the S&P 500). Combines external ticker lists (currently `market_dashboard`'s `ALL_STOCKS` and a `good_fundamental` screener CSV), skips anything already in `data/divList.xlsx`, filters the rest for a dividend paid in the trailing 5 years, and **appends** the qualifying tickers to `data/divList.xlsx`.
+2. **`add_new_dividend_payers.py`** — Run second, after `update_sp500_nasdaq.py`. Combines `data/SP500_Companies.xlsx` with external ticker lists (currently `market_dashboard`'s `ALL_STOCKS` and a `good_fundamental` screener CSV), skips anything already in `data/divList.xlsx`, filters the rest for a dividend paid in the trailing 5 years, and **appends** the qualifying tickers to `data/divList.xlsx`.
    ```powershell
    python scripts/add_new_dividend_payers.py
    ```
 
-3. **`export_scores.py`** — Run last, once the watchlist is finalized. Takes any comma-separated ticker list and scores every symbol across all 6 algorithm versions, writing one row per symbol to a single CSV.
+3. **`export_scores.py`** — Run last, once the watchlist is finalized. This is the canonical "run the full scan" script: takes either a comma-separated ticker list or `--from-xlsx data/divList.xlsx`, and scores every symbol across all 7 algorithm versions, writing one row per symbol to a single CSV.
    ```powershell
    python scripts/export_scores.py MSFT,AAPL,GOOG,ARM --out scores.csv
+   python scripts/export_scores.py --from-xlsx data/divList.xlsx --out scores.csv
    ```
 
-All three scripts use `dividend_analyzer.data.fetcher.DataFetcher` for any Yahoo Finance access rather than calling `yfinance` directly, keeping fetch logic (timezone handling, etc.) consistent with the core package.
+**`full_universe_scan.py`** — A thin orchestrator that runs the three steps above in sequence (refresh reference list → filter for dividends → full scan) in one command, for when you just want the whole pipeline refreshed end to end.
+```powershell
+python scripts/full_universe_scan.py
+```
+
+All scripts use `dividend_analyzer.data.fetcher.DataFetcher` for any Yahoo Finance access rather than calling `yfinance` directly, keeping fetch logic (timezone handling, etc.) consistent with the core package.
 
 ---
 
