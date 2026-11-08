@@ -49,6 +49,43 @@ TEST_FILES = ["tests/README.md", "tests/calibration.py"]  # other tests/test_*.p
 # The 4 patches, as exact (old, new) anchor pairs. Each `old` must appear
 # exactly once in the freshly-pulled file; this is what lets a later skill
 # update re-merge cleanly instead of silently drifting.
+#
+# These implement 4 CONCEPTUAL patches, spread across the 6 anchor pairs
+# below (some patches touch more than one place in the file). None of the
+# 4 touch scoring logic (the rulebook/checks/pillars) -- they only change
+# WHERE data comes from or WHETHER a non-scored section gets fetched at
+# all. That's also why they've merged cleanly across three upstream
+# calibration updates (b4c92f4, 44702da, d141e1c) without conflict: they're
+# orthogonal to the actual analysis.
+#
+# (a) `import os`: trivial plumbing for (b) and (d) below.
+#
+# (b) Prefetch injection (load_prefetched_info/load_prefetched_history,
+#     plus their use inside fetch_core() and main()): PIPELINE-SPECIFIC,
+#     not upstream-worthy. Our v7_fundamental_check.py wrapper writes our
+#     own DataFetcher's already-cached info/history to temp files and
+#     points this subprocess at them via FUNDCHECK_PREFETCH_INFO/
+#     FUNDCHECK_PREFETCH_HISTORY, skipping 2 of the skill's ~10 Yahoo
+#     calls. This only works because we invented that env-var/temp-file
+#     protocol -- there's no way for the standalone skill to benefit
+#     without a caller that speaks the same protocol.
+#
+# (c) Probe-cache reuse (_PROBE_CACHE, has_data() populating it,
+#     fetch_core() popping it): GENUINELY UPSTREAM-WORTHY, found
+#     independently of our integration. resolve()'s ticker-existence probe
+#     fetches income_stmt and discards it, then main()/fetch_core()
+#     fetches the SAME statement again from scratch a few lines later --
+#     one duplicate Yahoo call per run, for every user of the skill,
+#     standalone CLI included, which matters given how readily yfinance
+#     rate-limits. Flagged to the skill's maintainer; not yet merged
+#     upstream as of this writing.
+#
+# (d) FUNDCHECK_SKIP_CALENDAR/FUNDCHECK_SKIP_NEWS: PIPELINE-SPECIFIC. Skips
+#     two display-only sections (next-earnings calendar, news headlines)
+#     that are never scored into Quality/Risk and that our pipeline
+#     doesn't render. Opt-in via env var, off by default, so it changes
+#     nothing for the standalone skill -- but it's a convenience specific
+#     to how we embed this tool, not a fix to the tool itself.
 # --------------------------------------------------------------------------
 PATCHES = [
     (
