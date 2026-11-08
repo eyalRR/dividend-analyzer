@@ -10,7 +10,7 @@ would misclassify a healthy business.
 |---|---|---|
 | Negative shareholder equity | equity < 0 | Liabilities exceed assets. |
 | Equity erosion | 3y equity CAGR < -15% | Book value collapsing toward zero, caught before it crosses. |
-| Interest coverage floor | EBIT / interest < 1.5x | Earnings barely cover the debt service. |
+| Interest coverage floor | EBIT / interest < 1.5x, unless waived (see below) | Earnings barely cover the debt service. |
 | Net debt / EBITDA ceiling | > 5.0x (6.0x capital-intensive), see banding below | Leverage past the point of refinancing flexibility. |
 | Time to live | **negative CFO** with < 12 months of cash at current burn | Financing risk inside a normal holding period, assuming no new financing. |
 | Operating cash flow reversal | TTM CFO < 0 | The business consumed cash over the last year. |
@@ -75,9 +75,38 @@ banded rather than binary:
 | above 1.5x ceiling, coverage >= 8x | WATCH -- exceptional coverage overrides |
 | otherwise | FAIL (critical) |
 
-Teva at 5.11x with 1.79x coverage is a levered turnaround, not a failure. G City at
-13.4x with 1.66x coverage has no margin for a rate reset and fails. Camtek at 7.8x with
-26x coverage carries low-coupon converts and passes.
+Teva is a levered turnaround, not a failure (6.0x net debt/EBITDA, serviced -- see the
+coverage waiver below). G City at 13.4x with 1.66x coverage has no margin for a rate reset and
+fails. Camtek at 7.8x with 26x coverage carries low-coupon converts and passes.
+
+### Coverage waiver: EBIT is not the only evidence
+
+The coverage figure behind the 1.5x floor is EBIT over interest. Yahoo's EBIT is pretax income
+plus interest expense, so every charge below operating income -- impairments, restructuring,
+litigation -- lands in it. Teva's operating income is $3.3B and its EBIT $1.2B, a gap of about
+$2.2B of special charges (including $1.1B of impairment); EBIT coverage reads 1.42x, just under
+the floor, while the company generates $1.2B of free cash flow.
+
+So when EBIT coverage is under 1.5x, the floor is **waived to WATCH** only if two independent
+measures both clear 1.5x:
+
+- **operating income / interest**, and
+- **cash coverage** = (operating cash flow + interest) / interest, which uses neither profit
+  line. It assumes operating cash flow is after interest paid, as under US GAAP.
+
+Requiring both is the point: a company flattered by only one number is not cleared. The leverage
+ceiling above then uses the *weaker* of the two as its coverage figure, and its message says so.
+Everything else that reads coverage (the scored "coverage > 3" check, the liquidity and
+cash-conversion waivers) still uses EBIT.
+
+Checked against all 1,337 saved reports before it was adopted: the waiver fires on 17 companies,
+changes the verdict for exactly 11 (CVNA, DAR, GBTG, GPC, GPK, HLLY, ICUI, NXST, TEVA.TA, VIAV,
+WS) and adds no new AVOID. Six more (ANDG, BC, CNH, JBTM, MAX, SBSW) get the waiver but stay
+AVOID on other gates. **A control:** AAP has cash coverage of 3.24x but operating-income coverage
+of only 1.16x, so it correctly stays AVOID. Not every EBIT gap is explained: CVNA's is $2.3B that
+Yahoo does not itemize, and DAR, NXST and VIAV report no breakdown -- those clear on the two
+coverage measures, not on a known cause. Cash coverage can also be flattered by working-capital
+swings or financing-related flows, which was not unpicked company by company.
 
 ### Negative EBITDA is a state, not a ratio
 
@@ -259,7 +288,7 @@ The report always names the rulebook and how it was chosen.
 
 | Rulebook | Changes |
 |---|---|
-| **financials** | Skips 28 checks across four groups, listed here because "financials" is the one rulebook that overrides most of the default set rather than adding to it: **(1) corporate leverage/liquidity concepts that don't map to a bank's balance sheet** -- D/E, net debt/EBITDA (scored and critical), interest coverage (scored and critical), current and quick ratio, tangible book value, cash vs. current debt, time to live (a bank's cash position is its inventory, not a burn-rate clock); **(2) cash-flow-statement signals driven by deposit and loan flows, not earnings quality** -- FCF positive, FCF margin, FCF consistency, SBC-adjusted FCF, CFO/NetIncome, dividends-vs-FCF (Bank Hapoalim and Bank Leumi landing 20 points apart on CFO/NetIncome was the tell); **(3) margin/return concepts that don't map to a bank's income statement structure** -- operating margin, net margin, ROIC, gross margin trend, operating-income growth (revenue growth still scores); **(4) two forensic checks specific to a corporate balance sheet** -- goodwill/total-assets (a bank's loan book dwarfs any acquired goodwill by construction, so the ratio would trivially pass regardless of real M&A risk), receivables and inventory divergence (a bank's "receivables" are its loan book, so growth there is lending, not channel stuffing). Capex intensity is also skipped (capex is not a meaningful concept for a bank) and dividend funding is skipped because it scores the same `cash_payout` ratio `fin_div_cover` already scores at a stricter bar -- keeping both would double-count one signal in the same pillar. Substitutes equity/assets >= 8%, ROA >= 1%, ROE >= 10%, dividends/net income <= 80%. The critical dividend-trap gate (loss-funded, or high-yield-plus-high-payout) still applies -- it is not in this skip list. |
+| **financials** | Skips 30 checks across four groups, listed here because "financials" is the one rulebook that overrides most of the default set rather than adding to it: **(1) corporate leverage/liquidity concepts that don't map to a bank's balance sheet** -- D/E, net debt/EBITDA (scored and critical), interest coverage (scored and critical), current and quick ratio, tangible book value, cash vs. current debt, time to live (a bank's cash position is its inventory, not a burn-rate clock); **(2) cash-flow-statement signals driven by deposit and loan flows, not earnings quality** -- operating cash flow reversal (a critical gate for other companies), FCF positive, FCF margin, FCF consistency, SBC-adjusted FCF, CFO/NetIncome, CFO growth, dividends-vs-FCF (Bank Hapoalim and Bank Leumi landing 20 points apart on CFO/NetIncome was the tell); **(3) margin/return concepts that don't map to a bank's income statement structure** -- operating margin, net margin, ROIC, gross margin trend, operating-income growth (revenue growth still scores); **(4) two forensic checks specific to a corporate balance sheet** -- goodwill/total-assets (a bank's loan book dwarfs any acquired goodwill by construction, so the ratio would trivially pass regardless of real M&A risk), receivables and inventory divergence (a bank's "receivables" are its loan book, so growth there is lending, not channel stuffing). Capex intensity is also skipped (capex is not a meaningful concept for a bank) and dividend funding is skipped because it scores the same `cash_payout` ratio `fin_div_cover` already scores at a stricter bar -- keeping both would double-count one signal in the same pillar. Substitutes equity/assets >= 8%, ROA >= 1%, ROE >= 10%, dividends/net income <= 80%. The critical dividend-trap gate (loss-funded, or high-yield-plus-high-payout) still applies -- it is not in this skip list. |
 | **capital_intensive** (utilities, energy) | Net debt/EBITDA to 4.5x (critical 6.0x). These run structurally levered against predictable long-duration cash flows. |
 | **reit** | FFO-style treatment, payout against FFO, net debt against assets. |
 | **pre_revenue** | Margin and multiple checks become N/A; runway, burn and dilution dominate. Altman and Beneish dropped. |

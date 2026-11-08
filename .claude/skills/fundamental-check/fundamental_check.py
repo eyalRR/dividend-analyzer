@@ -607,6 +607,25 @@ def build_metrics(symbol, tk, info, fin, qfin, bs, cf, qcf, hist):
         # fortress waiver on exactly the safest balance sheets.
         d["interest_coverage"] = 999.0
         d["interest_coverage_inferred"] = True
+
+    # Cash-backed waiver for the critical coverage gates. EBIT coverage is the primary test,
+    # but Yahoo's EBIT is pretax income plus interest, so every charge below operating income
+    # (impairments, restructuring, litigation) lands in it: Teva's operating income is
+    # $3.3B and its EBIT $1.2B, because of ~$2.2B of special charges. The waiver applies only
+    # when EBIT coverage is under the 1.5x floor AND two independent measures both clear it:
+    # operating income over interest, and cash coverage -- (CFO + interest) / interest, which
+    # uses neither profit line and assumes CFO is after interest paid, as under US GAAP.
+    # Requiring both keeps this from clearing anyone who is merely flattered by one number.
+    d["opinc_coverage"] = safe_div(d["operating_income"], ie)
+    d["cash_coverage"] = (safe_div(d["cfo"] + ie, ie)
+                          if (d["cfo"] is not None and ie) else None)
+    d["coverage_effective"] = d["interest_coverage"]
+    d["coverage_waived"] = False
+    _ec, _oc, _cc = d["interest_coverage"], d["opinc_coverage"], d["cash_coverage"]
+    if (_ec is not None and _ec < 1.5 and _oc is not None and _cc is not None
+            and _oc >= 1.5 and _cc >= 1.5):
+        d["coverage_effective"] = min(_oc, _cc)     # the weaker confirmation is what counts
+        d["coverage_waived"] = True
     d["current_ratio"] = safe_div(d["current_assets"], d["current_liabilities"])
     quick_assets = None
     if d["current_assets"] is not None:
@@ -977,7 +996,8 @@ def build_checks():
     a(Check("cfo_growth", "CFO growth", "growth", "quality", 10,
             lambda m: (NA if m.g("cfo_growth") is None else
                        (PASS if m.g("cfo_growth") > 0 else FAIL),
-                       f"CFO {pct(m.g('cfo_growth'))} YoY (> 0)")))
+                       f"CFO {pct(m.g('cfo_growth'))} YoY (> 0)"),
+            skip_books={"financials"}))  # bank CFO is loan/deposit flow: JPM read -252%
     a(Check("rev_cagr", "3y revenue CAGR", "growth", "quality", 5,
             lambda m: (NA if m.g("rev_cagr3") is None else
                        (PASS if m.g("rev_cagr3") > 0 else FAIL),
@@ -1059,10 +1079,24 @@ def build_checks():
             lambda m: (_thr(m.g("interest_coverage"), 3.0),
                        f"Interest coverage {num(m.g('interest_coverage'))}x (> 3)"),
             skip_books={"financials"}))
+    def int_floor(m):
+        cov = m.g("interest_coverage")
+        if cov is None:
+            return NA, "Interest coverage n/a"
+        msg = f"Interest coverage {num(cov)}x (floor 1.5)"
+        if cov >= 1.5:
+            return PASS, msg
+        oc, cc = m.g("opinc_coverage"), m.g("cash_coverage")
+        if m.g("coverage_waived"):
+            return WATCH, (f"EBIT coverage {num(cov)}x is under the 1.5x floor, waived: operating "
+                           f"income covers interest {num(oc)}x and cash flow {num(cc)}x -- the EBIT "
+                           f"shortfall is charges below operating income, not an inability to pay")
+        if oc is not None and cc is not None:
+            msg += f"; operating income {num(oc)}x, cash {num(cc)}x -- waiver needs both >= 1.5"
+        return FAIL, msg
+
     a(Check("int_cover_crit", "Interest coverage floor", "leverage", "risk", 0,
-            lambda m: (_thr(m.g("interest_coverage"), 1.5),
-                       f"Interest coverage {num(m.g('interest_coverage'))}x (floor 1.5)"),
-            critical=True, skip_books={"financials"}))
+            int_floor, critical=True, skip_books={"financials"}))
     a(Check("de", "Debt / equity", "leverage", "risk", 6,
             lambda m: (_thr(m.g("debt_to_equity"), 1.5, higher_good=False),
                        f"Debt/Equity {num(m.g('debt_to_equity'))} (< 1.5)"),
@@ -1086,7 +1120,8 @@ def build_checks():
         paired with a servicing test.
         """
         ceiling = 6.0 if m.rulebook == "capital_intensive" else 5.0
-        nd, cov = m.g("nd_ebitda"), m.g("interest_coverage")
+        nd, cov = m.g("nd_ebitda"), m.g("coverage_effective")
+        tag = " (operating-income/cash-backed)" if m.g("coverage_waived") else ""
         neg, _ = _negative_ebitda_state(m)
         if neg is not None:
             return neg
@@ -1109,10 +1144,10 @@ def build_checks():
             # Exceptional coverage overrides the hard limit. Camtek carries
             # low-coupon converts: high debt against EBITDA, but 26x coverage.
             return WATCH, (msg + f" -- beyond the hard limit, but interest "
-                                 f"coverage of {num(cov)}x is exceptional")
+                                 f"coverage of {num(cov)}x{tag} is exceptional")
         if cov is not None and cov >= 1.5:
             return WATCH, (msg + f" -- above ceiling but interest coverage "
-                                 f"{num(cov)}x still services it")
+                                 f"{num(cov)}x{tag} still services it")
         return FAIL, msg + f", interest coverage {num(cov)}x cannot service it"
 
     a(Check("nd_ebitda_crit", "Net debt / EBITDA ceiling", "leverage", "risk", 0,
@@ -1154,7 +1189,10 @@ def build_checks():
             lambda m: (NA if m.g("cfo") is None else
                        (PASS if m.g("cfo") > 0 else FAIL),
                        f"CFO {money(m.g('cfo'))} {m.fin_ccy} over {m.ttm_label}"),
-            critical=True))
+            # A bank's operating cash flow is loan and deposit movements, not earnings:
+            # JPMorgan reported -$84B and was AVOIDed on it. Every other cash-flow check
+            # already skips financials for this reason; this critical one had been missed.
+            critical=True, skip_books={"financials"}))
     def time_to_live(m):
         """Months of cash left at current TTM burn, assuming no new financing.
 
