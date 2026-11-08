@@ -95,6 +95,11 @@ EXPECT = {
     "BC":      dict(q=(35, 85), r=(10, 60), avoid=False,
                     why="both waivers at once: EBIT coverage negative (operating income 2.8x, cash 5.7x) "
                         "AND net income negative with FCF covering the dividend 3.0x"),
+    # Negative equity from buybacks, not from losses: the buyback waiver must keep these off AVOID.
+    "MCD":     dict(q=(80, 100), r=(0, 40), avoid=False,
+                    why="NEGATIVE-EQUITY WAIVER: equity -$1.8B from buybacks; CFO $11B, coverage 7.9x, shares shrinking"),
+    "YUM":     dict(q=(80, 100), r=(0, 45), avoid=False,
+                    why="NEGATIVE-EQUITY WAIVER: equity -$7.3B from buybacks; FCF positive 4 of 4 years, coverage 5x"),
     "AMZN":    dict(q=(50, 90), r=(0, 35), avoid=False, why="leases, heavy capex"),
     "DIS":     dict(q=(50, 90), r=(0, 35), avoid=False, why="heavy goodwill"),
     "ICL.TA":  dict(q=(30, 75), r=(0, 35), avoid=False, why="cyclical at a trough"),

@@ -8,7 +8,7 @@ would misclassify a healthy business.
 
 | Gate | Trip condition | Why |
 |---|---|---|
-| Negative shareholder equity | equity < 0 | Liabilities exceed assets. |
+| Negative shareholder equity | equity < 0 -- unless waived (see below) | Liabilities exceed assets. |
 | Equity erosion | 3y equity CAGR < -15% | Book value collapsing toward zero, caught before it crosses. |
 | Interest coverage floor | EBIT / interest < 1.5x, unless waived (see below) | Earnings barely cover the debt service. |
 | Net debt / EBITDA ceiling | > 5.0x (6.0x capital-intensive), see banding below | Leverage past the point of refinancing flexibility. |
@@ -22,6 +22,21 @@ Tradability figures are FX-converted to USD, so the gates mean the same thing on
 TASE as on NASDAQ.
 
 The dilution row above was documented from this skill's first version but had no matching gate in code until this session -- 20%+ issuance only cost Quality points and could never trip AVOID on its own. It is now a real critical check (`dilution_crit`), companion to the scored `dilution` check the same way `nd_ebitda_crit` companions the scored leverage check: same underlying number, a harder line, zero scoring weight so it does not double-count.
+
+**Negative equity, buyback waiver.** Book equity goes negative for two unrelated reasons:
+accumulated losses, or a cash machine returning more than it earns. McDonald's (-$1.8B), Yum
+(-$7.3B) and Otis (-$5.4B) are the second kind and were AVOID on this gate alone, with Quality 100.
+The gate becomes a WATCH only when **all** of these hold: operating cash flow and free cash flow
+positive; free cash flow positive in at least 3 of the last 4 years; EBIT interest coverage at
+least 3x (a missing figure is no evidence and does not waive; a company with no reported interest
+and no net debt is already inferred at 999x); and a share count that is **shrinking** (flat does
+not qualify). Operating companies only -- financials and REITs keep the strict test. Every other
+critical gate (leverage ceiling, coverage floor, time to live, dilution) still runs. The
+cash-conversion-cycle liquidity waiver, which refuses companies with negative equity, accepts a
+waived company. Replayed on 1,342 saved reports before adoption: it clears MCD, YUM, COKE, DVA and
+MPLX and nothing that fails on cash flow, coverage or dilution (AMC, BYND, IEP, MMYT, AMRX stay
+AVOID). Otis is **not** cleared: Yahoo reports no interest-expense line for it (only a net interest
+figure), so its coverage is unknown and the rule fails closed.
 
 **Dividend trap, cash-backed waiver.** Both tests read GAAP net income, which one-off charges can
 push negative at a company whose cash flow covers the dividend many times over: Gilead has net

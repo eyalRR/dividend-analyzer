@@ -915,6 +915,38 @@ def _negative_ebitda_state(m):
                  f"-- runway question, not leverage")), nd
 
 
+def neg_equity_waiver(m):
+    """(waived, why_not_or_message) for the negative-equity gate.
+
+    Negative book equity has two very different causes. Accumulated losses destroy equity; a
+    cash machine that returns more than it earns (McDonald's, Yum) drives it negative
+    through buybacks. (Otis looks like the second kind but is not waived: Yahoo reports no
+    interest-expense line for it, so coverage is unknown and the rule fails closed.) The waiver recognises only the second, and needs ALL of: operating cash
+    flow and free cash flow positive, free cash flow positive in at least 3 of the last 4
+    years, EBIT interest coverage of at least 3x (a company with no reported interest and no
+    net debt is inferred at 999x upstream; a missing figure is no evidence and fails), and a
+    share count that is actually shrinking -- flat does not qualify, because partnerships with
+    near-zero equity and flat units are a different mechanism. Operating companies only.
+    """
+    if m.rulebook in ("financials", "reit"):
+        return False, "financials and REITs keep the strict test"
+    cfo, fcf, cov, sh = m.g("cfo"), m.g("fcf"), m.g("interest_coverage"), m.g("share_change")
+    yrs, ok = m.g("fcf_years_checked") or 0, m.g("fcf_positive_years") or 0
+    if cfo is None or cfo <= 0 or fcf is None or fcf <= 0:
+        return False, "operating or free cash flow is not positive"
+    if yrs < 3 or ok < 3:
+        return False, f"free cash flow positive in only {ok} of {yrs} years"
+    if cov is None:
+        return False, "interest coverage unknown"
+    if cov < 3.0:
+        return False, f"interest coverage {cov:.1f}x is under 3x"
+    if sh is None or sh >= 0:
+        return False, "share count is not shrinking"
+    return True, (f"waived: operating cash flow {money(cfo)} and free cash flow {money(fcf)} "
+                  f"(positive in {ok} of {yrs} years), interest coverage {cov:.1f}x, shares "
+                  f"{pct(sh)} YoY -- negative equity from buybacks, not from losses")
+
+
 def build_checks():
     C = []
     a = C.append
@@ -1078,11 +1110,20 @@ def build_checks():
     a(Check("div_not_cut", "Dividend trend", "capital", "quality", 4, div_not_cut))
 
     # ---------------- Leverage (risk) ---------------------------------
+    def neg_equity(m):
+        eq = m.g("equity")
+        if eq is None:
+            return NA, f"Shareholder equity {money(eq)} {m.fin_ccy}"
+        msg = f"Shareholder equity {money(eq)} {m.fin_ccy}"
+        if eq > 0:
+            return PASS, msg
+        ok, why = neg_equity_waiver(m)
+        if ok:
+            return WATCH, f"{msg} -- {why}"
+        return FAIL, msg
+
     a(Check("neg_equity", "Shareholder equity", "leverage", "risk", 12,
-            lambda m: (NA if m.g("equity") is None else
-                       (PASS if m.g("equity") > 0 else FAIL),
-                       f"Shareholder equity {money(m.g('equity'))} {m.fin_ccy}"),
-            critical=True))
+            neg_equity, critical=True))
     a(Check("equity_erosion", "Equity trend", "leverage", "risk", 6,
             lambda m: (NA if m.g("equity_cagr3") is None else
                        (PASS if m.g("equity_cagr3") >= -0.15 else FAIL),
@@ -1559,7 +1600,7 @@ def ccc_waiver(m):
     # A solvency-impaired company does not earn a liquidity pass. AMC shows a
     # negative CCC (cinema-goers pay upfront) alongside negative equity and 0.02x
     # coverage -- waiving its liquidity pillar would be perverse.
-    if (d.get("equity") is not None and d["equity"] <= 0) or \
+    if (d.get("equity") is not None and d["equity"] <= 0 and not neg_equity_waiver(m)[0]) or \
        (d.get("interest_coverage") is not None and d["interest_coverage"] < 1.5):
         return False, (f"Cash conversion cycle {num(d['ccc'],0)} days is negative, "
                        f"but solvency is impaired -- no liquidity waiver applied")
