@@ -33,8 +33,18 @@ import news
 # --------------------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPORTS_DIR = SCRIPT_DIR / "reports"
+ERROR_LOG = SCRIPT_DIR / "fundamental_check_errors.log"
 
 TLV_TZ = ZoneInfo("Asia/Jerusalem")
+
+# Fail closed. If a section the score cannot be trusted without comes back empty -- almost
+# always a Yahoo rate limit, because yfinance often returns an empty table instead of raising --
+# wait and retry, then refuse to score. A missing company record used to make the tool guess a
+# rulebook from the income statement; that sent AAP and BXP (both AVOID) to the bank rulebook,
+# which skips 30 of 46 checks, and they came back not-AVOID with Risk 0.
+RETRY_WAIT_SECONDS = 30
+MAX_RETRIES = 2
+SENTINEL_SCORE = -255        # printed/stored for both scores when nothing could be scored
 
 try:
     yf.config.network.retries = 3
@@ -63,6 +73,13 @@ def note(msg):
 # script's own `tk.info` / `tk.history()` calls -- 2 of its ~10 yfinance
 # requests per symbol. Every other fetch (statements, cashflow, calendar)
 # is unaffected; this script still gets to decide freshness for those.
+#
+# Checked once, before fetch_core()'s retry loop -- never inside it. A
+# retry builds a fresh yf.Ticker per round specifically because a reused one
+# can hand back the empty answer it already cached; injecting prefetched
+# data into that loop would defeat the same purpose, so a bad prefetch (or
+# none) is discarded for good and falls through to fetch_core's own normal
+# fresh-Ticker fetch/retry path.
 # --------------------------------------------------------------------------
 def load_prefetched_info():
     path = os.environ.get("FUNDCHECK_PREFETCH_INFO")
@@ -212,8 +229,7 @@ def yahoo_search(query):
 
 
 # resolve()'s existence probe below fetches income_stmt to confirm a symbol has
-# data; main() then fetched it AGAIN on a separate Ticker instance -- the same
-# large statement, twice, every run. Cached here so main() can reuse it instead.
+# data; fetch_core() can reuse it instead of fetching the same statement again.
 _PROBE_CACHE = {}
 
 
@@ -784,21 +800,18 @@ def choose_rulebook(m):
 
     if "reit" in ind:
         return "reit", "industry label"
-    if sec:
-        if "financial" in sec or "bank" in ind or "insurance" in ind:
-            return "financials", "sector label"
-        if "utilit" in sec or "energy" in sec:
-            return "capital_intensive", "sector label"
-    else:
-        if d.get("net_interest_income") is not None and d.get("revenue") is not None:
-            return "financials", "heuristic: net interest income present, no sector label"
-        ppe_ratio = safe_div(d.get("net_ppe"), d.get("total_assets"))
-        if ppe_ratio and ppe_ratio > 0.6:
-            return "capital_intensive", "heuristic: PPE > 60% of assets"
+    # There is deliberately NO fallback for a missing sector. main() refuses to score a company
+    # whose record has no sector (fail closed), so this is never reached without one. The old
+    # fallback -- "net interest income row present, therefore a bank" -- matched 97% of non-bank
+    # companies and was the way a rate-limited run turned a failing company into a perfect one.
+    if "financial" in sec or "bank" in ind or "insurance" in ind:
+        return "financials", "sector label"
+    if "utilit" in sec or "energy" in sec:
+        return "capital_intensive", "sector label"
 
     if rev_usd is not None and rev_usd < 25e6 and (ni or 0) < 0:
         return "pre_revenue", "revenue < $25M with negative earnings"
-    return "default", "sector label" if sec else "default fallback"
+    return "default", "sector label"
 
 
 # --------------------------------------------------------------------------
@@ -1233,13 +1246,32 @@ def build_checks():
             return NA, "Dividend yield n/a"
         if paid <= 0:
             return PASS, "No dividend paid"
+        failure = None
         if ni is not None and ni <= 0:
-            return FAIL, (f"Yield {pct(y)} paid out of negative earnings "
-                          f"(net income {money(ni)}) -- unfunded distribution")
-        if y > 0.08 and payout is not None and payout > 1.2:
-            return FAIL, (f"Yield {pct(y)} with cash payout {pct(payout)} "
-                          f"-- distribution exceeds earnings (trap: >8% and >120%)")
-        return PASS, f"Yield {pct(y)} with cash payout {pct(payout)} (covered)"
+            failure = (f"Yield {pct(y)} paid out of negative earnings "
+                       f"(net income {money(ni)}) -- unfunded distribution")
+        elif y > 0.08 and payout is not None and payout > 1.2:
+            failure = (f"Yield {pct(y)} with cash payout {pct(payout)} "
+                       f"-- distribution exceeds earnings (trap: >8% and >120%)")
+        if failure is None:
+            return PASS, f"Yield {pct(y)} with cash payout {pct(payout)} (covered)"
+
+        # Cash-backed waiver. Both tests above read GAAP net income, which one-off charges can
+        # push negative at a company whose cash flow covers the dividend many times over
+        # (Gilead: net income -$3.9B, free cash flow +$13.8B, dividend $4.1B). The waiver needs
+        # free cash flow to cover the dividend AND to have been positive in at least 3 of the last
+        # 4 years, so one year's windfall cannot clear anyone. Scoped to operating companies:
+        # for BDCs, asset managers and REITs both payout-vs-earnings and free cash flow are
+        # unreliable (a BDC's operating cash flow is portfolio purchases and sales), so those
+        # keep the strict test until they have a rulebook of their own.
+        fcf, yrs, ok_yrs = m.g("fcf"), m.g("fcf_years_checked") or 0, m.g("fcf_positive_years") or 0
+        if (m.rulebook not in ("financials", "reit") and fcf is not None and fcf >= paid
+                and yrs >= 3 and ok_yrs >= 3):
+            return WATCH, (f"{failure} -- waived: free cash flow {money(fcf)} covers the "
+                           f"{money(paid)} dividend {fcf / paid:.1f}x and was positive in "
+                           f"{ok_yrs} of {yrs} years, so the net-income test is distorted by "
+                           f"charges, not by an unfunded payout")
+        return FAIL, failure
 
     a(Check("div_trap", "Dividend sustainability", "earnings_quality", "risk", 8,
             div_trap, critical=True))
@@ -1626,6 +1658,102 @@ def band_risk(s):
 # --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
+def _has_rows(x):
+    return x is not None and not getattr(x, "empty", True)
+
+
+def _info_ok(x):
+    # A record with no sector is as unusable as an empty one: the sector picks the rulebook.
+    return bool(x) and bool(x.get("sector"))
+
+
+# section -> (how to read it from a Ticker, how to tell it arrived, value to use on failure)
+CORE_SECTIONS = {
+    "info": (lambda t: t.info, _info_ok, {}),
+    "income_stmt": (lambda t: t.income_stmt, _has_rows, None),
+    "balance_sheet": (lambda t: t.balance_sheet, _has_rows, None),
+    "cashflow": (lambda t: t.cashflow, _has_rows, None),
+}
+
+
+def fetch_core(symbol, tk):
+    """Fetch the sections a score cannot be trusted without. Returns (sections, missing).
+
+    Anything missing is retried together after one RETRY_WAIT_SECONDS wait per round, using a
+    fresh Ticker each time (a reused one can hand back the empty answer it already cached).
+
+    A caller's pre-fetched info, or income_stmt reused from resolve()'s existence probe, is
+    checked ONCE here, before any retry -- never injected into the retry loop itself, which would
+    defeat the point of building a fresh Ticker each round. A bad or missing prefetch/probe value
+    is simply dropped and falls through to the normal fresh-Ticker fetch/retry path below.
+    """
+    got = {}
+    prefetched_info = load_prefetched_info()
+    if prefetched_info is not None and _info_ok(prefetched_info):
+        got["info"] = prefetched_info
+    probed_fin = _PROBE_CACHE.pop(symbol, None)
+    if probed_fin is not None and _has_rows(probed_fin):
+        note("income_stmt: reused from ticker-resolution probe (skipped duplicate fetch)")
+        got["income_stmt"] = probed_fin
+    for attempt in range(MAX_RETRIES + 1):
+        pending = [k for k in CORE_SECTIONS if k not in got]
+        if attempt:
+            note(f"missing {', '.join(pending)}; waiting {RETRY_WAIT_SECONDS}s before "
+                 f"retry {attempt}/{MAX_RETRIES}")
+            time.sleep(RETRY_WAIT_SECONDS)
+            tk = yf.Ticker(symbol)
+        for k in pending:
+            read, ok, default = CORE_SECTIONS[k]
+            value = fetch(k, lambda: read(tk), default)
+            if ok(value):
+                got[k] = value
+        if len(got) == len(CORE_SECTIONS):
+            break
+    return got, [k for k in CORE_SECTIONS if k not in got]
+
+
+def fail_closed(user_input, symbol, chain, missing):
+    """Refuse to score: reason to the log, stderr and stdout, an error JSON, sentinel scores.
+
+    Exit code 2 ("unscoreable") is what the screener already understands, and it reads the first
+    stderr line as the reason. The error JSON gets its own file name so it can never overwrite a
+    good report from earlier the same day, and avoid is null, never False: an unknown is not a
+    clean bill of health.
+    """
+    reason = (f"Required data missing for {symbol} after {MAX_RETRIES} retries "
+              f"{RETRY_WAIT_SECONDS}s apart: {', '.join(missing)}. Yahoo returned nothing for "
+              f"these, usually a rate limit, so retry later. Not scored: guessing from partial "
+              f"data can turn a failing company into a perfect one.")
+    now = dt.datetime.now(TLV_TZ)
+    try:
+        with open(ERROR_LOG, "a", encoding="utf-8") as fh:
+            fh.write(f"{now.isoformat(timespec='seconds')} | {symbol} | {reason} | "
+                     f"notes: {'; '.join(DIAG['notes']) or 'none'}\n")
+    except OSError:
+        pass                               # an unwritable log must not hide the failure itself
+    print(reason, file=sys.stderr)
+    for n in DIAG["notes"]:
+        print(f"  {n}", file=sys.stderr)
+    payload = {
+        "status": "error", "error": reason, "missing": missing,
+        "input": user_input, "resolution_chain": chain, "symbol": symbol,
+        "quality": SENTINEL_SCORE, "risk": SENTINEL_SCORE, "avoid": None,
+        "fetched_at": now.isoformat(timespec="seconds"), "diagnostics": DIAG,
+    }
+    try:
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        epath = REPORTS_DIR / f"{file_key(symbol)}_{dt.date.today().isoformat()}.error.json"
+        epath.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    except OSError:
+        epath = None
+    print(f"ERROR -- {reason}")
+    print(f"QUALITY {SENTINEL_SCORE} / 100      RISK {SENTINEL_SCORE} / 100      "
+          f"(sentinel values: nothing was scored)")
+    if epath:
+        print(f"JSON: {epath}")
+    return 2
+
+
 def main(argv):
     if len(argv) != 2:
         print("usage: fundamental_check.py <TICKER|TASE_NUMBER>", file=sys.stderr)
@@ -1647,15 +1775,11 @@ def main(argv):
         return 2
 
     tk = yf.Ticker(symbol)
-    info = load_prefetched_info() or fetch("info", lambda: tk.info, {}) or {}
-    fin = _PROBE_CACHE.pop(symbol, None)
-    if fin is not None:
-        note("income_stmt: reused from ticker-resolution probe (skipped duplicate fetch)")
-    else:
-        fin = fetch("income_stmt", lambda: tk.income_stmt)
+    core, missing = fetch_core(symbol, tk)
+    if missing:
+        return fail_closed(user_input, symbol, chain, missing)
+    info, fin, bs, cf = core["info"], core["income_stmt"], core["balance_sheet"], core["cashflow"]
     qfin = fetch("quarterly_income_stmt", lambda: tk.quarterly_income_stmt)
-    bs = fetch("balance_sheet", lambda: tk.balance_sheet)
-    cf = fetch("cashflow", lambda: tk.cashflow)
     qcf = fetch("quarterly_cashflow", lambda: tk.quarterly_cashflow)
     hist = load_prefetched_history()
     if hist is None:
@@ -1668,10 +1792,6 @@ def main(argv):
     else:
         calendar = fetch("calendar", lambda: tk.calendar, {}) or {}
     fetched_at = dt.datetime.now(TLV_TZ)
-
-    if fin is None or getattr(fin, "empty", True):
-        print(f"No financial statements available for {symbol}.", file=sys.stderr)
-        return 2
 
     m = build_metrics(symbol, tk, info, fin, qfin, bs, cf, qcf, hist)
 
@@ -1916,6 +2036,7 @@ def main(argv):
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     jpath = REPORTS_DIR / f"{file_key(symbol)}_{dt.date.today().isoformat()}.json"
     payload = {
+        "status": "ok",
         "input": user_input, "resolution_chain": chain, "symbol": symbol,
         "name": m.name, "sector": m.sector, "industry": m.industry,
         "rulebook": m.rulebook, "rulebook_basis": m.rulebook_basis,

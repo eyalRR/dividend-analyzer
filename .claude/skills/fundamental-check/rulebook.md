@@ -15,13 +15,27 @@ would misclassify a healthy business.
 | Time to live | **negative CFO** with < 12 months of cash at current burn | Financing risk inside a normal holding period, assuming no new financing. |
 | Operating cash flow reversal | TTM CFO < 0 | The business consumed cash over the last year. |
 | Dilution | share count +20% YoY | Going-concern-level issuance. |
-| Dividend trap | yield > 8% **and** cash payout > 120% | High yield masking a collapsing price and an unfunded payout. |
+| Dividend trap | a dividend paid out of negative net income, or yield > 8% **and** cash payout > 120% -- unless waived (see below) | High yield masking a collapsing price and an unfunded payout. |
 | Tradability | price < $2, market cap < $100M, or 30d median dollar volume < $1M | Below this, execution and manipulation risk dominate fundamentals. |
 
 Tradability figures are FX-converted to USD, so the gates mean the same thing on
 TASE as on NASDAQ.
 
 The dilution row above was documented from this skill's first version but had no matching gate in code until this session -- 20%+ issuance only cost Quality points and could never trip AVOID on its own. It is now a real critical check (`dilution_crit`), companion to the scored `dilution` check the same way `nd_ebitda_crit` companions the scored leverage check: same underlying number, a harder line, zero scoring weight so it does not double-count.
+
+**Dividend trap, cash-backed waiver.** Both tests read GAAP net income, which one-off charges can
+push negative at a company whose cash flow covers the dividend many times over: Gilead has net
+income of -$3.9B, free cash flow of +$13.8B and a $4.1B dividend, and was AVOID on this gate alone.
+The gate is therefore waived to WATCH when free cash flow covers the dividend **and** was positive
+in at least 3 of the last 4 years (so one year's windfall cannot clear a company). It is scoped to
+operating companies: financials and REITs keep the strict test, because for BDCs, asset managers
+and mortgage REITs both payout-versus-earnings and free cash flow are unreliable (a BDC's
+operating cash flow is portfolio purchases and sales; BBDC would clear and CION would not, on
+noise). Checked on 1,339 saved reports before adoption: it clears BC, GILD, USPH and WS, adds no
+new AVOID, and leaves APD (free cash flow -$301M against a $1.6B dividend, a real shortfall)
+AVOID. A company just short of covering its dividend (AUGO at 0.93x, FLNG at 0.99x) stays AVOID:
+the rule has a cliff at 1.0x. The scored "dividend funding" check is not waived, so it still
+costs those companies some Risk points.
 
 **Dividend trap, corrected.** The gate used to return PASS as soon as yield was <= 8%, without ever checking whether the payment was funded -- a 7% yield paid entirely out of losses cleared it untouched. Loss-funded is now checked first, at any yield, before the high-yield-plus-high-payout condition is even considered.
 
@@ -282,9 +296,15 @@ reports it as a red flag rather than a waiver.
 
 ## Sector rulebooks
 
-Routed by sector label, with a statement-based fallback when the label is missing
-(net interest income present -> financials; PPE > 60% of assets -> capital-intensive).
-The report always names the rulebook and how it was chosen.
+Routed by the company's sector and industry label. There is **no fallback for a missing
+label**: a company whose record has no sector is not scored at all (see "Missing data fails
+closed" below). An earlier version guessed from the statements instead -- "net interest income
+row present, therefore a bank; PPE over 60% of assets, therefore capital-intensive" -- and the
+bank guess matched 97% of non-bank companies (1,202 of 1,236). With the company record empty,
+which is what a rate-limited call returns, AAP and BXP (both AVOID) were scored on the bank
+rulebook, which skips 30 of 46 checks, and came back not-AVOID with Risk 0; a healthy utility
+(MGEE) came back Quality 100, Risk 0. The report always names the rulebook and how it was
+chosen.
 
 | Rulebook | Changes |
 |---|---|
@@ -307,6 +327,21 @@ The report always names the rulebook and how it was chosen.
 - **TTM.** Sum of the last 4 quarters where available; otherwise the latest annual
   figure, labelled `FY` rather than `TTM` so a fallback is never mistaken for a
   trailing figure. Some TASE mid-caps report semi-annually, which makes this necessary.
+- **Missing data fails closed.** Four sections are required: the company record (with a
+  sector), and the income statement, balance sheet and cash flow tables. If any comes back
+  empty, the tool waits 30 seconds and retries (all missing sections together, with a fresh
+  Yahoo object each time, up to 2 retries, so at most 60 seconds of waiting). If they are
+  still missing it refuses to score: exit code 2, the reason on stderr, one line appended to
+  `fundamental_check_errors.log` beside the script, and an error JSON
+  (`<SYMBOL>_<DATE>.error.json`, its own file so it can never overwrite a good report) with
+  `status: "error"`, `quality: -255`, `risk: -255` and `avoid: null`. The -255 values are
+  sentinels that no real score can equal, and `avoid` is null rather than false because an
+  unknown is not a clean bill of health. Other sections (quarterly statements, price history,
+  the earnings calendar) are best-effort: without them some checks are N/A, as before.
+  Yahoo often returns an empty table instead of raising an error, which is why this checks
+  for emptiness and not only for exceptions. Checked on real data by blanking one section at
+  a time: before this, a blank company record turned MGEE 60/18 into 100/0, and a blank
+  cash flow table silently moved its Quality from 60 to 68 with no warning.
 - **Coverage.** N/A checks drop out of both numerator and denominator. Below 50%
   coverage the script refuses to print a score and exits 2 -- a score built on thin
   data is worse than no score.

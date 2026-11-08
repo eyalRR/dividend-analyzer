@@ -11,8 +11,9 @@ python fundamental_check.py 1081124      # TASE security number
 
 Prints a markdown report; writes the full detail to `reports/<SYMBOL>_<DATE>.json`.
 
-**Exit codes:** `0` clean, `1` AVOID tripped, `2` unresolvable ticker or under 50%
-check coverage.
+**Exit codes:** `0` clean, `1` AVOID tripped, `2` unresolvable ticker, under 50% check
+coverage, or required data missing from Yahoo (after a 30-second wait and two retries; the
+scores then read -255 / -255 and the reason goes to `fundamental_check_errors.log`).
 
 ## Standalone
 
