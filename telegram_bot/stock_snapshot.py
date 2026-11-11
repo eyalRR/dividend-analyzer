@@ -17,6 +17,7 @@ import mplfinance as mpf
 import pandas as pd
 import yfinance as yf
 from bidi.algorithm import get_display
+from matplotlib import ft2font
 from matplotlib.ticker import MultipleLocator
 
 from tase_symbols import resolve_symbol as _resolve_tase_symbol
@@ -35,8 +36,13 @@ LOOKBACKS = [
 ]
 
 
+# matplotlib >= 3.11 ships libraqm and does bidirectional layout itself, so
+# text must stay in logical order; older versions need it pre-reordered.
+_MPL_HANDLES_BIDI = hasattr(ft2font, "__libraqm_version__")
+
+
 def rtl(text: str) -> str:
-    return get_display(text)
+    return text if _MPL_HANDLES_BIDI else get_display(text)
 
 
 def normalize_symbol(symbol: str) -> str:
