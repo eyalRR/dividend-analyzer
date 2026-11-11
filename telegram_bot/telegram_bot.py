@@ -12,6 +12,7 @@ from telegram import Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from algorithms import bot_responses_algorithms
+from bot_commands import bot_commands_handler
 from chat_logger import log_message
 from chat_registry import register_chat
 from tase_symbols import resolve_symbol
@@ -27,6 +28,8 @@ logger = logging.getLogger(__name__)
 TELEGRAM_MESSAGE_LIMIT = 4000
 ALGORITHM_TIMEOUT = 300
 IMAGE_TAG_RE = re.compile(r"!\[([^\]]+)\]")
+# "/word" anywhere in the message (optionally "/word@botname")
+COMMAND_RE = re.compile(r"(?:^|\s)/(\w+)(?:@\w+)?")
 
 
 def symbol_exists(symbol: str) -> bool:
@@ -95,6 +98,13 @@ async def handle_symbol(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     register_chat(chat_id)
     log_message(chat_id, "user", update.message.text)
 
+    cmd_match = COMMAND_RE.search(update.message.text)
+    if cmd_match:
+        reply = bot_commands_handler(cmd_match.group(1).lower(), update.message.text)
+        await send_long_text(update, reply)
+        log_message(chat_id, "bot", reply)
+        return
+
     raw_symbol = update.message.text.strip().upper()
     if not (1 <= len(raw_symbol) <= 10) or not raw_symbol.replace(".", "").replace("-", "").isalnum():
         reply = "Send a stock ticker symbol, e.g. JNJ, or a TASE security number, e.g. 1081124"
@@ -149,7 +159,7 @@ def main() -> None:
         .connect_timeout(30)
         .build()
     )
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_symbol))
+    app.add_handler(MessageHandler(filters.TEXT, handle_symbol))
     app.run_polling()
 
 
