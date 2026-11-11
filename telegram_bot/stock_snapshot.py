@@ -49,6 +49,31 @@ def normalize_symbol(symbol: str) -> str:
     return _resolve_tase_symbol(symbol.strip())
 
 
+PRICE_COLUMNS = ["Open", "High", "Low", "Close", "Adj Close"]
+
+
+def fix_tase_unit_jumps(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    # Yahoo's TASE history sometimes switches between agorot and shekels
+    # mid-series, showing up as a single-bar ~100x jump. Rescale everything
+    # before such a jump onto the later (current) unit.
+    if not symbol.upper().endswith(".TA"):
+        return df
+    df = df.copy()
+    cols = [c for c in PRICE_COLUMNS if c in df.columns]
+    ratio = df["Close"] / df["Close"].shift(1)
+    for i in range(1, len(df)):
+        r = ratio.iloc[i]
+        if r > 50:
+            factor = 100.0
+        elif r < 1 / 50:
+            factor = 0.01
+        else:
+            continue
+        df.iloc[:i, df.columns.get_indexer(cols)] *= factor
+        ratio = df["Close"] / df["Close"].shift(1)
+    return df
+
+
 def fetch_daily(symbol: str, period: str = "2y") -> pd.DataFrame:
     # 2y by default: the daily panel only displays the last 6 months, but
     # SMA150 needs 150 prior trading days of run-up before that window, and
@@ -59,7 +84,7 @@ def fetch_daily(symbol: str, period: str = "2y") -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df.index = pd.DatetimeIndex(df.index.date)
-    return df
+    return fix_tase_unit_jumps(df, symbol)
 
 
 def fetch_weekly_long(symbol: str) -> pd.DataFrame:
@@ -72,7 +97,7 @@ def fetch_weekly_long(symbol: str) -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df.index = pd.DatetimeIndex(df.index.date)
-    return df
+    return fix_tase_unit_jumps(df, symbol)
 
 
 def to_weekly(daily: pd.DataFrame) -> pd.DataFrame:
@@ -202,6 +227,10 @@ def set_monthly_xticks(ax, df: pd.DataFrame):
     ax.grid(True, axis="x", which="major", color="gray", alpha=0.3, linestyle="--")
 
 
+GRID_PCT_STEPS = [5, 10, 25, 50, 100, 250, 500, 1000]
+MAX_GRID_LINES = 20
+
+
 def add_pct_axis(ax, df: pd.DataFrame):
     # A secondary left-hand y-axis sharing the same data coordinates as the
     # price axis, just relabeled as % change from the first close in view.
@@ -209,17 +238,20 @@ def add_pct_axis(ax, df: pd.DataFrame):
     to_pct = lambda price: (price / base - 1) * 100
     to_price = lambda pct: (pct / 100 + 1) * base
 
+    ymin, ymax = ax.get_ylim()
+    pct_span = to_pct(ymax) - to_pct(ymin)
+    step = next((s for s in GRID_PCT_STEPS if pct_span / s <= MAX_GRID_LINES), GRID_PCT_STEPS[-1])
+
     secax = ax.secondary_yaxis("left", functions=(to_pct, to_price))
     secax.set_ylabel("% change")
-    secax.yaxis.set_major_locator(MultipleLocator(5))
+    secax.yaxis.set_major_locator(MultipleLocator(step))
 
     # secax is only a thin strip for the ticks/labels, not a full overlay --
     # its own grid() would only be visible in that sliver. Draw the actual
-    # horizontal gridlines on the main axes instead, at the same 5% levels.
-    ymin, ymax = ax.get_ylim()
-    start = math.floor(to_pct(ymin) / 5) * 5
-    end = math.ceil(to_pct(ymax) / 5) * 5
-    for level in range(int(start), int(end) + 5, 5):
+    # horizontal gridlines on the main axes instead, at the same levels.
+    start = math.floor(to_pct(ymin) / step) * step
+    end = math.ceil(to_pct(ymax) / step) * step
+    for level in range(int(start), int(end) + step, step):
         price = to_price(level)
         if ymin <= price <= ymax:
             ax.axhline(price, color="gray", alpha=0.3, linestyle="--", linewidth=0.8, zorder=0)
