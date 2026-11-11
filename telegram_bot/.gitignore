@@ -1,0 +1,24 @@
+# Secrets
+.env
+**/.env
+
+# Runtime data / logs (contain chat ids and message content)
+logs/
+received_images/
+broadcast_users.txt
+**/broadcast_users.txt
+chat_log.json
+**/chat_log.json
+
+# Generated / regenerable artifacts
+__pycache__/
+*.pyc
+*_snapshot.png
+tase_symbol_map.json
+**/tase_symbol_map.json
+
+# Large build artifact -- regenerate with docker buildx + docker save (see README)
+respberryPi2B/docker/dividend-bot-armv7.tar.gz
+
+# Claude Code local state
+.claude/scheduled_tasks.lock
