@@ -1,4 +1,4 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 
 from algorithms import bot_responses_algorithms
 from chat_settings import get_enabled_algorithms
@@ -21,26 +21,30 @@ def _config_menu(message: str, chat_id: int):
     return MENU_TEXT, build_menu(get_enabled_algorithms(chat_id))
 
 
-# Persistent keyboard button shown above the input box; tapping it sends
-# BUTTON_TEXT as a normal message, which handle_symbol maps to /settings.
-BUTTON_TEXT = "⚙ Settings"
-SETTINGS_KEYBOARD = ReplyKeyboardMarkup(
-    [[KeyboardButton(BUTTON_TEXT)]], resize_keyboard=True, is_persistent=False
+
+
+HELP_TEXT = (
+    "Send a stock ticker (e.g. JNJ) or a TASE security number (e.g. 1081124) "
+    "and I'll run the selected algorithms on it.\n\n"
+    "Commands:\n"
+    "/settings - choose which algorithms run (then press Save)\n"
+    "/start - show this help\n\n"
+    "Send /settings and press Save to get started."
 )
 
 
+def help_reply():
+    # ReplyKeyboardRemove clears the old Settings keyboard from chats that still have it.
+    return HELP_TEXT, ReplyKeyboardRemove()
+
+
 def _start(message: str, chat_id: int):
-    return (
-        "Send a stock ticker (e.g. JNJ) or a TASE security number (e.g. 1081124).\n"
-        "Use the Settings button to choose which algorithms run.",
-        SETTINGS_KEYBOARD,
-    )
+    return help_reply()
 
 
 COMMANDS = {
     "start": _start,
     "settings": _config_menu,
-    "config": _config_menu,
 }
 
 

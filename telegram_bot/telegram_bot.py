@@ -8,12 +8,12 @@ from pathlib import Path
 
 import yfinance as yf
 from dotenv import load_dotenv
-from telegram import MenuButtonDefault, Update
+from telegram import BotCommand, MenuButtonDefault, Update
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 from algorithms import bot_responses_algorithms
-from bot_commands import BUTTON_TEXT, SAVE_DATA, TOGGLE_PREFIX, bot_commands_handler, build_menu
-from chat_settings import get_enabled_algorithms, set_enabled_algorithms
+from bot_commands import SAVE_DATA, TOGGLE_PREFIX, bot_commands_handler, build_menu, help_reply
+from chat_settings import get_enabled_algorithms, has_saved_settings, set_enabled_algorithms
 from chat_logger import log_message
 from chat_registry import register_chat
 from tase_symbols import resolve_symbol
@@ -101,17 +101,15 @@ async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     cmd_match = COMMAND_RE.search(update.message.text)
     cmd = cmd_match.group(1).lower() if cmd_match else None
-    if update.message.text.strip() == BUTTON_TEXT:
-        cmd = "settings"
-        # Keyboard buttons always send their label as a message; remove it so
-        # tapping the button looks silent.
-        try:
-            await update.message.delete()
-        except Exception:
-            logger.warning("Could not delete the Settings button message", exc_info=True)
     if cmd:
         context.chat_data.pop("draft", None)  # a fresh menu starts from saved settings
         reply, markup = bot_commands_handler(cmd, update.message.text, chat_id)
+        await update.message.reply_text(reply, reply_markup=markup)
+        log_message(chat_id, "bot", reply)
+        return
+
+    if not has_saved_settings(chat_id):
+        reply, markup = help_reply()
         await update.message.reply_text(reply, reply_markup=markup)
         log_message(chat_id, "bot", reply)
         return
@@ -189,9 +187,13 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def register_command_menu(app: Application) -> None:
-    """Removes the "Menu" button: with no registered commands Telegram hides it.
-    /start, /config and /settings still work when typed."""
-    await app.bot.delete_my_commands()
+    """Publishes /start and /settings to Telegram's command menu."""
+    await app.bot.set_my_commands(
+        [
+            BotCommand("settings", "Choose which algorithms run"),
+            BotCommand("start", "Show help"),
+        ]
+    )
     await app.bot.set_chat_menu_button(menu_button=MenuButtonDefault())
 
 

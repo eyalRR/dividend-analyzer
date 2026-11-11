@@ -14,6 +14,10 @@ def _load() -> dict:
         return {}
 
 
+def has_saved_settings(chat_id: int) -> bool:
+    return str(chat_id) in _load()
+
+
 def get_enabled_algorithms(chat_id: int) -> list[str]:
     """Enabled algorithm names for a chat, in registration order (default: all)."""
     saved = _load().get(str(chat_id))
