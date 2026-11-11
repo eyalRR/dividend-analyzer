@@ -17,7 +17,9 @@ from tase_symbols import resolve_symbol
 
 load_dotenv()
 
-DIVIDEND_ANALYZER_PATH = Path(r"D:\projects\AI\projects\dividend-analyzer")
+# telegram_bot and dividend-analyzer are sibling repo checkouts -- resolved
+# relative to this file so it works on any machine without configuration.
+DIVIDEND_ANALYZER_PATH = Path(__file__).resolve().parent.parent / "dividend-analyzer"
 sys.path.insert(0, str(DIVIDEND_ANALYZER_PATH))
 
 import matplotlib
