@@ -22,3 +22,7 @@ respberryPi2B/docker/dividend-bot-armv7.tar.gz
 
 # Claude Code local state
 .claude/scheduled_tasks.lock
+
+# Per-chat settings (contain chat ids)
+chat_settings.json
+**/chat_settings.json

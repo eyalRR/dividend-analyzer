@@ -8,11 +8,12 @@ from pathlib import Path
 
 import yfinance as yf
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+from telegram import MenuButtonDefault, Update
+from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 from algorithms import bot_responses_algorithms
-from bot_commands import bot_commands_handler
+from bot_commands import BUTTON_TEXT, SAVE_DATA, TOGGLE_PREFIX, bot_commands_handler, build_menu
+from chat_settings import get_enabled_algorithms, set_enabled_algorithms
 from chat_logger import log_message
 from chat_registry import register_chat
 from tase_symbols import resolve_symbol
@@ -90,7 +91,7 @@ async def run_named_algorithm(loop, name: str, script_path: str, symbol: str) ->
     return name, text
 
 
-async def handle_symbol(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.text:
         return
 
@@ -99,9 +100,19 @@ async def handle_symbol(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     log_message(chat_id, "user", update.message.text)
 
     cmd_match = COMMAND_RE.search(update.message.text)
-    if cmd_match:
-        reply = bot_commands_handler(cmd_match.group(1).lower(), update.message.text)
-        await send_long_text(update, reply)
+    cmd = cmd_match.group(1).lower() if cmd_match else None
+    if update.message.text.strip() == BUTTON_TEXT:
+        cmd = "settings"
+        # Keyboard buttons always send their label as a message; remove it so
+        # tapping the button looks silent.
+        try:
+            await update.message.delete()
+        except Exception:
+            logger.warning("Could not delete the Settings button message", exc_info=True)
+    if cmd:
+        context.chat_data.pop("draft", None)  # a fresh menu starts from saved settings
+        reply, markup = bot_commands_handler(cmd, update.message.text, chat_id)
+        await update.message.reply_text(reply, reply_markup=markup)
         log_message(chat_id, "bot", reply)
         return
 
@@ -127,11 +138,16 @@ async def handle_symbol(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         log_message(chat_id, "bot", reply)
         return
 
-    await update.message.reply_text(f"Analyzing {symbol}...")
+    enabled = get_enabled_algorithms(chat_id)
+    if not enabled:
+        await update.message.reply_text("No algorithms enabled. Use /config to choose some.")
+        return
+
+    await update.message.reply_text(f"Analyzing {symbol} ({', '.join(enabled)})...")
 
     tasks = [
-        run_named_algorithm(loop, name, script_path, symbol)
-        for name, script_path in bot_responses_algorithms.items()
+        run_named_algorithm(loop, name, bot_responses_algorithms[name], symbol)
+        for name in enabled
     ]
     # Run all algorithms in parallel, but wait for every one of them before
     # sending anything -- so a reply's upload never competes with a
@@ -146,6 +162,39 @@ async def handle_symbol(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         log_message(chat_id, "bot", f"[{name}] {text}")
 
 
+async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    chat_id = query.message.chat_id
+    # Draft selection lives in chat_data until Save is pressed.
+    draft = context.chat_data.setdefault("draft", get_enabled_algorithms(chat_id))
+
+    if query.data.startswith(TOGGLE_PREFIX):
+        name = query.data[len(TOGGLE_PREFIX):]
+        if name in draft:
+            draft.remove(name)
+        elif name in bot_responses_algorithms:
+            draft.append(name)
+        await query.answer()
+        await query.edit_message_reply_markup(build_menu(draft))
+    elif query.data == SAVE_DATA:
+        if not draft:
+            await query.answer("Select at least one algorithm.", show_alert=True)
+            return
+        set_enabled_algorithms(chat_id, draft)
+        context.chat_data.pop("draft", None)
+        saved = ", ".join(get_enabled_algorithms(chat_id))
+        await query.answer("Saved")
+        await query.edit_message_text(f"Saved. Active algorithms: {saved}")
+        log_message(chat_id, "bot", f"Saved algorithms: {saved}")
+
+
+async def register_command_menu(app: Application) -> None:
+    """Removes the "Menu" button: with no registered commands Telegram hides it.
+    /start, /config and /settings still work when typed."""
+    await app.bot.delete_my_commands()
+    await app.bot.set_chat_menu_button(menu_button=MenuButtonDefault())
+
+
 def main() -> None:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     app = (
@@ -157,8 +206,10 @@ def main() -> None:
         # which a ~200KB chart can exceed on a slow uplink.
         .media_write_timeout(120)
         .connect_timeout(30)
+        .post_init(register_command_menu)
         .build()
     )
+    app.add_handler(CallbackQueryHandler(handle_menu_button))
     app.add_handler(MessageHandler(filters.TEXT, handle_symbol))
     app.run_polling()
 
