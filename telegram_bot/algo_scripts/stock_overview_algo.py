@@ -1,4 +1,11 @@
-"""Weekly/daily candles + change-table + ATR14 snapshot. Standalone: `python stock_overview_algo.py SYMBOL`."""
+"""Weekly/daily candles + change-table + ATR14 snapshot.
+Standalone: `python stock_overview_algo.py SYMBOL`.
+
+Target Audience:
+- English: Technical Traders & Market Momentum
+- Hebrew: סוחרים טכניים ותזמון מגמות מחיר
+Focus: Price trends, candlestick patterns, moving averages, and ATR volatility.
+"""
 
 import sys
 import tempfile
