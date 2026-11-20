@@ -149,12 +149,25 @@ flowchart TD
 
 The bot connects directly to Telegram Gateway via event-driven long polling (zero inbound firewall ports required) and supports full interactive command handling.
 
+#### Three Distinct Investor Profiles (Target Audiences)
+
+The bot features a per-chat modular architecture tailored to 3 distinct investment strategies:
+
+| Engine | Icon | Target Audience | Primary Focus | Output |
+|---|:---:|---|---|---|
+| `dividend_analyzer` | 💰 | **Dividend & Cash Flow Investors**<br>*(משקיעי דיבידנד ותזרים)* | 5-Year Compounded Dividend Value (V5), payout sustainability, missing dividend detection | 3-Panel Dividend Dashboard & Scorecard |
+| `stock_overview` | 📊 | **Technical & Momentum Traders**<br>*(סוחרים טכניים ותזמון)* | Price action, MA20/50/200 trends, volume profiles, and ATR14 volatility | High-resolution candlestick snapshot with TASE Hebrew RTL support |
+| `fundamental_check` | 🔍 | **Deep Value & Solvency Investors**<br>*(משקיעי ערך ואיתנות פיננסית)* | 40+ forensic balance-sheet tests: Piotroski F-score, Altman Z'', and Beneish M-score (V7) | Quality (0-100) & Risk (0-100) Audit Report |
+
 #### Bot Commands & Workflow
 
 ```text
-User  ──►  /start       ──►  Bot welcomes user and registers chat in registry
-User  ──►  /settings    ──►  Bot presents interactive algorithm choice buttons
-User  ──►  AAPL         ──►  Bot fetches real-time data, generates chart & returns analysis
+User  ──►  /start       ──►  Bot welcomes user and presents engine descriptions
+User  ──►  /settings    ──►  Bot presents interactive toggles by Investor Profile:
+                             [ ☑ 💰 משקיעי דיבידנד ותזרים מזומנים ]
+                             [ ☐ 📊 סוחרים טכניים ותזמון מגמות מחיר ]
+                             [ ☐ 🔍 משקיעי ערך, איכות מאזן ומניעת סיכונים ]
+User  ──►  AAPL / 1081124 ──►  Bot resolves ticker (US or TASE), executes chosen engines & replies
 ```
 
 #### Example Output in Telegram Chat
