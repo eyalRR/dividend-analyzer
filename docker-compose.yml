@@ -1,0 +1,12 @@
+services:
+  dividend-bot:
+    build: .
+    container_name: dividend-report-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./dividend_cache.db:/app/dividend_cache.db
+      - ./telegram_bot/chat_settings.json:/app/telegram_bot/chat_settings.json
+      - ./telegram_bot/logs:/app/telegram_bot/logs

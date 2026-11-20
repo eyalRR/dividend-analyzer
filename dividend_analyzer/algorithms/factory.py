@@ -9,6 +9,7 @@ from dividend_analyzer.algorithms.v3_exponential import V3ExponentialAlgorithm
 from dividend_analyzer.algorithms.v4_penalty import V4PenaltyAlgorithm
 from dividend_analyzer.algorithms.v5_dividend_value import V5DividendValueAlgorithm
 from dividend_analyzer.algorithms.v6_modern import V6ModernAlgorithm
+from dividend_analyzer.algorithms.v7_fundamental_check import V7FundamentalCheckAlgorithm
 
 _ALGORITHM_REGISTRY: Dict[AlgorithmVersion, Type[BaseAlgorithm]] = {
     AlgorithmVersion.V1_LINEAR: V1LinearAlgorithm,
@@ -17,6 +18,7 @@ _ALGORITHM_REGISTRY: Dict[AlgorithmVersion, Type[BaseAlgorithm]] = {
     AlgorithmVersion.V4_PENALTY_WEIGHTED: V4PenaltyAlgorithm,
     AlgorithmVersion.V5_DIVIDEND_VALUE: V5DividendValueAlgorithm,
     AlgorithmVersion.V6_MODERN_CORRECTED: V6ModernAlgorithm,
+    AlgorithmVersion.V7_FUNDAMENTAL_CHECK: V7FundamentalCheckAlgorithm,
 }
 
 def get_algorithm(version: AlgorithmVersion | str) -> BaseAlgorithm:

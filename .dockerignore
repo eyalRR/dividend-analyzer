@@ -1,0 +1,39 @@
+# Version control
+.git
+.gitignore
+
+# Environment variables & secrets
+.env
+.env.*
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Database and cache files
+dividend_cache.db
+*.db
+*.db-journal
+*.sqlite3
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Development & IDE files
+.idea/
+.vscode/
+
+# Project archives and temp files
+archive/
+*.log
+
+# Claude config (preserve fundamental-check skill script needed by algo_scripts)
+.claude/
+!.claude/skills/fundamental-check/
