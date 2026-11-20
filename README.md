@@ -46,7 +46,7 @@ flowchart TD
 
     subgraph Core_Domain [Core Domain & Analytics Engine]
         AlgoFactory["Algorithm Factory (factory.py)"]
-        BaseAlgo["<<abstract>> BaseAlgorithm"]
+        BaseAlgo["BaseAlgorithm (Abstract Base)"]
         
         V1["V1: Normalized Linear"]
         V2["V2: Sigmoid S-Curve"]
@@ -75,13 +75,13 @@ flowchart TD
     ExcelBatch --> Fetcher
 
     AlgoFactory --> BaseAlgo
-    BaseAlgo <|-- V1
-    BaseAlgo <|-- V2
-    BaseAlgo <|-- V3
-    BaseAlgo <|-- V4
-    BaseAlgo <|-- V5
-    BaseAlgo <|-- V6
-    BaseAlgo <|-- V7
+    BaseAlgo --> V1
+    BaseAlgo --> V2
+    BaseAlgo --> V3
+    BaseAlgo --> V4
+    BaseAlgo --> V5
+    BaseAlgo --> V6
+    BaseAlgo --> V7
 
     Fetcher --> Cache
     Cache --> YahooAPI
@@ -92,7 +92,9 @@ flowchart TD
 
 1. **Strategy Pattern (`dividend_analyzer.algorithms.*`)**:
    All valuation algorithms inherit from `BaseAlgorithm` and expose a unified interface:
-   $$\text{analyze}(\text{symbol}, \text{history}, \text{info}, \text{benchmark\_yield}) \longrightarrow \text{StockAnalysisResult}$$
+   ```python
+   analyze(symbol, history, info, benchmark_yield) -> StockAnalysisResult
+   ```
    Algorithms are fully decoupled from data fetching and presentation. New financial models can be plugged in without altering existing code.
 
 2. **Factory Pattern (`dividend_analyzer.algorithms.factory`)**:
@@ -101,7 +103,7 @@ flowchart TD
 3. **Cache-Aside Pattern (`dividend_analyzer.data.cache`)**:
    A transparent SQLite caching engine (`dividend_cache.db`) intercepting all external network requests.
    - Configurable per-table TTL (Time-To-Live).
-   - Eliminates rate-limiting barriers and cuts batch runtime by **$>85\%$**.
+   - Eliminates rate-limiting barriers and cuts batch runtime by **over 85%**.
 
 4. **Bi-Directional Text & Localization Adapter (`telegram_bot.stock_snapshot` / `tase_symbols`)**:
    Automated symbol normalization for the Tel Aviv Stock Exchange (TASE) paired with RTL text shaping (`python-bidi`) ensures flawless right-to-left Hebrew rendering across financial charts on Matplotlib.
@@ -125,11 +127,11 @@ flowchart TD
 
 | Version | Name | Primary Methodology | Key Target Metrics |
 |---|---|---|---|
-| `v1_linear` | **Normalized Linear** | Equal-weighted linear metric normalization $[-1, 1]$ | Dividend Yield, Payout Ratio, 5Y Dividend Growth, PE, Debt/Equity, Beta |
-| `v2_sigmoid` | **Sigmoid S-Curve** | Logistic activation function $S(x) = \frac{1}{1 + e^{-x}}$ | Strict payout penalties ($<50\%$), dividend growth sensitivity ($>10\%$) |
+| `v1_linear` | **Normalized Linear** | Equal-weighted linear metric normalization `[-1, 1]` | Dividend Yield, Payout Ratio, 5Y Dividend Growth, PE, Debt/Equity, Beta |
+| `v2_sigmoid` | **Sigmoid S-Curve** | Logistic activation function `S(x) = 1 / (1 + e^(-x))` | Strict payout penalties (`< 50%`), dividend growth sensitivity (`> 10%`) |
 | `v3_exponential` | **Asymmetric Exponential** | Benchmark-adjusted curves against S&P 500 (`SPY`) | Asymmetric quadratic penalties for payout & leverage; dynamic S&P 500 hurdle |
-| `v4_penalty_weighted` | **Safety Penalty Model** | Base weighted scoring with severe tail-risk penalties | Severe deductions for payout $>80\%$, debt $>2.0$, and dividend history $<5$ years |
-| `v5_dividend_value` | **Compounded Dividend Value** | Compound Yield + Growth calculation over 5-year horizon | Yield-on-Cost projection ($40\%$ weight), safety checks, and balance sheet quality |
+| `v4_penalty_weighted` | **Safety Penalty Model** | Base weighted scoring with severe tail-risk penalties | Severe deductions for payout `≥ 80%`, debt `≥ 2.0`, and dividend history `< 5` years |
+| `v5_dividend_value` | **Compounded Dividend Value** | Compound Yield + Growth calculation over 5-year horizon | Yield-on-Cost projection (`40%` weight), safety checks, and balance sheet quality |
 | `v6_modern_corrected` | **Modern Financial Standard** | Mathematically rigorous trailing-twelve-month (TTM) model | Uncapped dividend age, true diluted EPS, statement earnings growth, loss protection |
 | `v7_fundamental_check` | **Fundamental Solvency Engine** | Multi-pillar corporate health & solvency validation | Piotroski 9/9, Altman Z'', Beneish M, cash conversion cycle, debt coverage ratios |
 
@@ -269,7 +271,7 @@ python scripts/full_universe_scan.py
 The application includes an optimized, production-hardened `Dockerfile` and `docker-compose.yml` configured for continuous 24/7 background execution.
 
 ### Architectural Highlights of the Container
-- **Multi-Stage Speed with `uv`**: Uses Astral's `uv` binary to install dependencies in $<20$ seconds with minimal image size.
+- **Multi-Stage Speed with `uv`**: Uses Astral's `uv` binary to install dependencies in under 20 seconds with minimal image size.
 - **Embedded Font Support**: Includes `fonts-dejavu-core` and `fonts-freefont-ttf` for RTL Hebrew rendering.
 - **Stateless Container with State-Preserving Mounts**: All databases, settings, and logs survive container rebuilds.
 
