@@ -1,4 +1,11 @@
-"""Runs the vendored fundamental_check.py skill. Standalone: `python fundamental_check_algo.py SYMBOL`."""
+"""Runs the vendored fundamental_check.py skill (Algorithm V7).
+Standalone: `python fundamental_check_algo.py SYMBOL`.
+
+Target Audience:
+- English: Deep Value & Risk-Averse Investors
+- Hebrew: משקיעי ערך, איכות מאזן ומניעת סיכונים
+Focus: 40+ quantitative balance-sheet audits, Piotroski, Altman Z'', and Beneish M-scores.
+"""
 
 import os
 import subprocess

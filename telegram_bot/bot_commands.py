@@ -1,17 +1,22 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 
-from algorithms import bot_responses_algorithms
+from algorithms import ALGORITHM_REGISTRY, bot_responses_algorithms
 from chat_settings import get_enabled_algorithms
 
 TOGGLE_PREFIX = "toggle:"
 SAVE_DATA = "save"
-MENU_TEXT = "Choose algorithms to run (tap to toggle, then Save):"
+MENU_TEXT = "בחר אילו מנועים ירוצו עבורך (לחץ לשינוי ואז על Save):"
 
 
 def build_menu(selected: list[str]) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(("☑ " if name in selected else "☐ ") + name, callback_data=TOGGLE_PREFIX + name)]
-        for name in bot_responses_algorithms
+        [
+            InlineKeyboardButton(
+                f"{'☑ ' if name in selected else '☐ '}{meta.icon} {meta.target_audience_he}",
+                callback_data=TOGGLE_PREFIX + name,
+            )
+        ]
+        for name, meta in ALGORITHM_REGISTRY.items()
     ]
     rows.append([InlineKeyboardButton("💾 Save", callback_data=SAVE_DATA)])
     return InlineKeyboardMarkup(rows)
@@ -24,12 +29,15 @@ def _config_menu(message: str, chat_id: int):
 
 
 HELP_TEXT = (
-    "Send a stock ticker (e.g. JNJ) or a TASE security number (e.g. 1081124) "
-    "and I'll run the selected algorithms on it.\n\n"
-    "Commands:\n"
-    "/settings - choose which algorithms run (then press Save)\n"
-    "/start - show this help\n\n"
-    "Send /settings and press Save to get started."
+    "שלח סימול מניה (למשל JNJ) או מספר נייר בבורסה בתל אביב (למשל 1081124) "
+    "והבוט יריץ את המנועים שנבחרו עבורך.\n\n"
+    "קהלי היעד והמנועים הזמינים:\n"
+    "• 💰 משקיעי דיבידנד ותזרים (V5 Dividend Compounding)\n"
+    "• 📊 סוחרים טכניים ותזמון (Technical Trends & Volatility)\n"
+    "• 🔍 משקיעי ערך ואיתנות (V7 Deep Solvency & Health)\n\n"
+    "פקודות:\n"
+    "/settings - בחירת המנועים המותאמים לך (ולחיצה על שמירה)\n"
+    "/start - הצגת תפריט העזרה הזה"
 )
 
 

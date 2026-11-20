@@ -1,4 +1,11 @@
-"""Dividend-value dashboard chart. Standalone: `python dividend_analyzer_algo.py SYMBOL`."""
+"""Dividend-value dashboard chart (Algorithm V5).
+Standalone: `python dividend_analyzer_algo.py SYMBOL`.
+
+Target Audience:
+- English: Dividend Growth & Passive Income Investors
+- Hebrew: משקיעי דיבידנד ותזרים מזומנים
+Focus: 5-year compounded dividend growth, yield-on-cost, and payout coverage.
+"""
 
 import sys
 import tempfile
